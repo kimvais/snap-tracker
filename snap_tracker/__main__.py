@@ -1,10 +1,10 @@
 import codecs
-import enum
 import itertools
 import json
 import logging
 import os
 import pathlib
+from collections import Counter
 from dataclasses import (
     dataclass,
     field,
@@ -16,15 +16,12 @@ import aiofiles
 import fire
 import motor.motor_asyncio
 from watchfiles import awatch
+from snap_tracker.debug import (
+    _replace_dollars_with_underscores_in_keys,
+    find_cards,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _get_new_key(k):
-    new_key = k.replace('$', '_')
-    if new_key == "_id":
-        return 'id_'
-    return new_key
 
 
 def _calculate_prices():
@@ -86,6 +83,10 @@ class Price:
     def is_split(self):
         return self.target == Rarity.INFINITY
 
+    @property
+    def collection_points(self):
+        pass
+
 
 PRICES = sorted(_calculate_prices(), key=lambda price: (price._priority, price.credits))
 
@@ -111,38 +112,6 @@ class CardVariant:
     rarity: Rarity
     is_split: bool = False
     is_favourite: bool = False
-
-
-def _replace_dollars_with_underscores_in_keys(d):
-    for k, v in d.copy().items():
-        new_key = _get_new_key(k)
-        if isinstance(v, dict):
-            d.pop(k)
-            d[new_key] = v
-            _replace_dollars_with_underscores_in_keys(v)
-        else:
-            d.pop(k)
-            d[new_key] = v
-    return d
-
-
-def find_cards(d, stack=None):
-    if stack is None:
-        stack = []
-    for k, v in d.items():
-        if k.startswith('Cards'):
-            yield stringify_stack(stack), v
-        elif isinstance(v, dict):
-            logger.debug(stringify_stack(stack))
-            yield from find_cards(v, [*stack, k])
-        elif isinstance(v, list):
-            for i, d_ in enumerate(v):
-                if isinstance(d_, dict):
-                    yield from find_cards(d_, [*stack, k, i])
-
-
-def stringify_stack(stack):
-    return f"[{']['.join(s if isinstance(s, str) else str(s) for s in stack)}]"
 
 
 class Tracker:
@@ -182,12 +151,12 @@ class Tracker:
                 raise ValueError(contents[:10])
             return data
 
-    async def read_file(self, name):
-        file_name = self.datadir / f'{name}.json'
+    async def _read_state(self, name):
+        file_name = self.datadir / f'{name}State.json'
         return await self._read_file(file_name)
 
     async def parse_game_state(self):
-        data = await self._read_file('GameState')
+        data = await self._read_state('Game')
         game_state = data['RemoteGame']['GameState']
         _player, _opponent = data['RemoteGame']['GameState']['Players']
         for stack, cards in find_cards(game_state):
@@ -198,7 +167,7 @@ class Tracker:
         for price in PRICES:
             logger.debug("Upgrade price: %s", price)
         collection = await self._load_collection()
-        top = sorted(collection.values(), key=lambda c: (c.different_variants, c.boosters), reverse=True)[:10]
+        top = sorted(collection.values(), key=lambda c: (c.different_variants, c.boosters))[:10]
         for c in top:
             print(c)
 
@@ -206,7 +175,7 @@ class Tracker:
         def _sort_fn(c):
             return c.splits, c.different_variants, c.boosters
         cards = await self._load_collection()
-        profile_state = await self.read_file('ProfileState')
+        profile_state = await self._read_state('Profile')
         profile = profile_state['ServerState']
         credits = profile['Wallet']['_creditsCurrency']['TotalAmount']
         logger.info("Player has %d credits", credits)
@@ -236,7 +205,7 @@ class Tracker:
                 card.boosters -= price.boosters
 
     async def _load_collection(self):
-        coll_state = await self.read_file('CollectionState')
+        coll_state = await self._read_state('Collection')
         collection = coll_state['ServerState']
         cards = {}
         # Read card statistics
