@@ -18,7 +18,7 @@ dev = [
     "ruff",
 ]
 [project.scripts]
-snap-tracker = "snap_tracker:main"
+snap-tracker = "snap_tracker.__main__:main"
 
 [tool.setuptools.packages]
 find = { }

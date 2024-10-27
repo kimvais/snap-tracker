@@ -15,6 +15,7 @@ from functools import cached_property
 import aiofiles
 import fire
 import motor.motor_asyncio
+from watchfiles import awatch
 
 logger = logging.getLogger(__name__)
 
@@ -148,11 +149,14 @@ class Tracker:
     def __init__(self):
         dir_fn = os.path.expandvars(r'%LOCALAPPDATA%low\Second Dinner\SNAP\Standalone\States\nvprod')
         self.datadir = pathlib.Path(dir_fn)
-        self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
-        self.db = self._client.raw
+        try:
+            self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
+            self.db = self._client.raw
+        except KeyError:
+            logger.error("No MONGODB_URI set, syncing will not work.")
 
     async def run(self):
-        async for changes in awatch(self.datadir.glob('*.json')):
+        async for changes in awatch(*self.datadir.glob('*.json')):
             print(changes)
 
     async def sync(self):
