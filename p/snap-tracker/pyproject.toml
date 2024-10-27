@@ -1,0 +1,85 @@
+[project]
+name = "snap-tracker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "aiofiles",
+    "motor",
+    "fire",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ipython",
+    "ruff",
+]
+[project.scripts]
+snap-tracker = "snap_tracker:main"
+
+[tool.setuptools.packages]
+find = { }
+
+[tool.ruff]
+line-length = 119
+exclude = [
+    ".ruff_cache",
+    "*.ipynb",
+]
+[tool.ruff.lint]
+preview = true
+select = [
+    # `ruff linter` for list of all available linters and https://docs.astral.sh/ruff/rules/ to see the documentation.
+    "A", # flake8-builtins
+    "AIR", # (Apache) airflow
+    "ARG", # flake8-unused-arguments
+    "ASYNC", # flake8-async
+    "B", # flake8-bugbear
+    "BLE", # flake8-blind-except / diaper antipattern
+    "C4", # flake8-comprehensions
+    "C90", # mccabe / cyclomatic complexity
+    "COM", # flake8-commas
+    "DTZ", # flake8-timezonez (disallow non-aware datetime usage)
+    "E", # pycodestyle errors
+    "ERA", # eradicate (commented out code)
+    "EXE", # flake8-executable
+    "F", # pyflakes
+    "FA", # flake8-future-annotations
+    "FAST", # FastAPI
+    "FBT", # flake8-boolean-trap
+    "FLY", # flynt
+    "FURB", # refurb
+    "G", # flake8-logging-format
+    "I", # isort
+    "ICN", # flake8-import-conventions
+    "INP", # flake8-no-pep420 / implicit namespace packages
+    "INT", # flake8-gettext
+    "ISC", # flake8-implicit-string-concatenation
+    "LOG", # flake8-logging
+    "N", # pep8-naming
+    "NPY", # numpy-
+    "PD", # pandas-vet
+    "PERF", # perflint
+    "PIE", # flake8-pie (unnecessary statements)
+    "PGH", # pygrep-hooks
+    "PTH", # flake8-use-pathlib
+    "PYI", # flake8-pyi (.pyi files / type annotation (stubs))
+    "RET", # flake8-return
+    "RSE", # flake8-raise
+    "RUF", # ruff specific rules
+    "S", # flake8-bandit
+    "SIM", # flake8-simplify
+    "SLOT", # flake8-slots
+    "T10", # flake8-debugger
+    "TCH", # flake8-type-checking
+    "TID", # flake8-tidy-imports
+    "TRY", # trycetarops
+    "W", # pycodestyle warnings
+    "YTT", # flake8-2020 - python version checks / future proofing
+]
+
+[tool.ruff.lint.flake8-builtins]
+builtins-ignorelist = ["credits"]
+
