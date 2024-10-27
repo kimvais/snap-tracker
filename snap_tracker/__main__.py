@@ -124,6 +124,14 @@ class Tracker:
         except KeyError:
             logger.error("No MONGODB_URI set, syncing will not work.")
 
+    async def card_stats(self):
+        print('Your best performing cards are:\n')
+        data = await self._read_state('Profile')
+        account = data['ServerState']['Account']
+        counter = Counter({k: v for k,v in account['CardStats'].items() if isinstance(v, int)})
+        for i, (card, points) in enumerate(counter.most_common(20), 1):
+            print(f'#{i}: {card} ({points})')
+
     async def run(self):
         async for changes in awatch(*self.datadir.glob('*.json')):
             print(changes)
