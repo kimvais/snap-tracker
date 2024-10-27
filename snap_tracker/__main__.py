@@ -76,7 +76,7 @@ class Price:
     _priority: int
 
     def __str__(self):
-        return f'{self.rarity} -> {self.target} = {self.credits}/{self.boosters}'
+        return f'{self.rarity} -> {self.target} for {self.credits}/{self.boosters} = {self.collection_points}'
 
     __repr__ = __str__
     @property
@@ -85,8 +85,8 @@ class Price:
 
     @property
     def collection_points(self):
-        pass
-
+        quotient, remainder = divmod(self.credits, 50)
+        return int(quotient + remainder / 25)
 
 PRICES = sorted(_calculate_prices(), key=lambda price: (price._priority, price.credits))
 
@@ -104,6 +104,10 @@ class Card:
 
     def __str__(self):
         return f'<{self.def_id} ({self.splits}/{self.different_variants})>'
+
+    @cached_property
+    def number_of_common_variants(self):
+        return sum(1 for v in self.variants if v.rarity == Rarity.COMMON)
 
 
 @dataclass(frozen=True)
@@ -180,13 +184,22 @@ class Tracker:
             print(c)
 
     async def upgrades(self):
-        def _sort_fn(c):
-            return c.splits, c.different_variants, c.boosters
         cards = await self._load_collection()
         profile_state = await self._read_state('Profile')
         profile = profile_state['ServerState']
         credits = profile['Wallet']['_creditsCurrency']['TotalAmount']
-        logger.info("Player has %d credits", credits)
+        print(f'Hi {profile["Account"]["Name"]}!\n'
+              f'You have {credits} credits available for upgrades.\n'
+              'This is how you should spend them:\n'
+              )
+
+        await self._maximize_collection_level(cards, credits)
+        await self._maximize_splits(cards, credits)
+
+    async def _maximize_splits(self, cards, credits):
+        print("To maximize splits:")
+        def _sort_fn(c):
+            return c.splits, c.different_variants, c.boosters
 
         # Find the highest possible purchase
         possible_upgrades = []
@@ -207,10 +220,13 @@ class Tracker:
                 if price.credits > credits or price.boosters > card.boosters:
                     continue
                 possible_upgrades.append(card)
-                print(f'Upgrade {card} {price} '
-                      f'(you have {credits}/{card.boosters})')
+                print(
+                    f'Upgrade {card} {price} '
+                    f'(you have {credits}/{card.boosters})'
+                    )
                 credits -= price.credits
                 card.boosters -= price.boosters
+        print()
 
     async def _load_collection(self):
         coll_state = await self._read_state('Collection')
@@ -236,6 +252,18 @@ class Tracker:
             )
             cards[name].variants.add(variant)
         return cards
+
+    async def _maximize_collection_level(self, cards, credits):
+        print("To maximize collection level:")
+        potential_cards = sorted((c for c in cards.values() if c.boosters >= 5 and c.number_of_common_variants), key=lambda c: c.number_of_common_variants, reverse=True)
+        collection_level = 0
+        while credits and potential_cards:
+            card = potential_cards.pop(0)
+            upgrades = int(min((credits / 25, card.number_of_common_variants, card.boosters / 5)))
+            print(f"Upgrade {upgrades} common variants of {card} for {upgrades * 25} credits and {upgrades * 5} tokens")
+            credits -= upgrades * 25
+            collection_level += upgrades
+        print(f'...for total of {collection_level} collection level\n')
 
 
 def main():
