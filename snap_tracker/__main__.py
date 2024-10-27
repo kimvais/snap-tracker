@@ -1,4 +1,5 @@
 import codecs
+import enum
 import itertools
 import json
 import logging
@@ -9,6 +10,7 @@ from dataclasses import (
     field,
 )
 from enum import Enum
+from functools import cached_property
 
 import aiofiles
 import fire
@@ -24,25 +26,32 @@ def _get_new_key(k):
     return new_key
 
 
-@dataclass
-class Price:
-    rarity: str
-    credits:  int
-    boosters: int
-    is_split: bool = False
-
-    def __str__(self):
-        return f'{self.credits}/{self.boosters}'
-
-
-def _calculate_split_prices():
-    for i in range(1, len(_UPGRADE_PRICES) + 1):
-        costs = _UPGRADE_PRICES[-i:]
+def _calculate_prices():
+    _total_costs = (
+        (Rarity.COMMON, 0, 0),
+        (Rarity.UNCOMMON, 25, 5),
+        (Rarity.RARE, 125, 15),
+        (Rarity.EPIC, 325, 35),
+        (Rarity.LEGENDARY, 625, 65),
+        (Rarity.ULTRA, 1025, 105),
+        (Rarity.INFINITY, 1525, 155)
+    )
+    Ranks = Enum('Rank', [(c[0].value, i) for i, c in enumerate(reversed(_total_costs), 1)])
+    upgrades = itertools.combinations(_total_costs, 2)
+    for pair in upgrades:
+        lower = min(pair, key=lambda p: p[1])
+        upper = max(pair, key=lambda p: p[1])
+        from_ = lower[0]
+        to = upper[0]
+        credit_cost = upper[1] - lower[1]
+        booster_cost = upper[2] - lower[2]
         yield Price(
-            costs[-i].rarity,
-            sum(c.credits for c in costs),
-            sum(c.boosters for c in costs),
-            is_split=True)
+            from_,
+            to,
+            credit_cost,
+            booster_cost,
+            Ranks[to].value,
+        )
 
 
 class Rarity(str, Enum):
@@ -60,17 +69,24 @@ class Rarity(str, Enum):
     __repr__ = __str__
 
 
-_UPGRADE_PRICES = (
-    Price(Rarity.COMMON, 25, 5),
-    Price(Rarity.UNCOMMON, 100, 10),
-    Price(Rarity.RARE, 200, 20),
-    Price(Rarity.EPIC, 300, 30),
-    Price(Rarity.LEGENDARY, 400, 40),
-    Price(Rarity.ULTRA, 500, 50),
-)
-_PRICES_TO_SPLIT = tuple(_calculate_split_prices())
+@dataclass
+class Price:
+    rarity: Rarity
+    target: Rarity
+    credits:  int
+    boosters: int
+    _priority: int
 
-PRICES = sorted(itertools.chain(_UPGRADE_PRICES, _PRICES_TO_SPLIT), key=lambda price: price.credits, reverse=True)
+    def __str__(self):
+        return f'{self.rarity} -> {self.target} = {self.credits}/{self.boosters}'
+
+    __repr__ = __str__
+    @property
+    def is_split(self):
+        return self.target == Rarity.INFINITY
+
+
+PRICES = sorted(_calculate_prices(), key=lambda price: (price._priority, price.credits))
 
 
 @dataclass
@@ -80,8 +96,12 @@ class Card:
     splits: int = 0
     variants: set = field(default_factory=set)
 
+    @cached_property
+    def different_variants(self):
+        return len({v.variant_id for v in self.variants})
+
     def __str__(self):
-        return f'{self.def_id} - {self.boosters}: {len(self.variants)} ({self.splits})'
+        return f'<{self.def_id} ({self.splits}/{self.different_variants})>'
 
 
 @dataclass(frozen=True)
@@ -132,6 +152,10 @@ class Tracker:
         self.db = self._client.raw
 
     async def run(self):
+        async for changes in awatch(self.datadir.glob('*.json')):
+            print(changes)
+
+    async def sync(self):
         logging.info('Using game data directory %s', self.datadir)
         for fn in self.datadir.glob('*.json'):
             data = await self._read_file(fn)
@@ -167,15 +191,16 @@ class Tracker:
         return data
 
     async def test(self):
+        for price in PRICES:
+            logger.debug("Upgrade price: %s", price)
         collection = await self._load_collection()
-        top = sorted(collection.values(), key=lambda c: (len(c.variants), c.boosters), reverse=True)[:10]
+        top = sorted(collection.values(), key=lambda c: (c.different_variants, c.boosters), reverse=True)[:10]
         for c in top:
             print(c)
 
     async def upgrades(self):
         def _sort_fn(c):
-            return c.splits, len(c.variants), c.boosters
-        logger.info(PRICES)
+            return c.splits, c.different_variants, c.boosters
         cards = await self._load_collection()
         profile_state = await self.read_file('ProfileState')
         profile = profile_state['ServerState']
@@ -201,8 +226,8 @@ class Tracker:
                 if price.credits > credits or price.boosters > card.boosters:
                     continue
                 possible_upgrades.append(card)
-                print(f'Upgrade {price.rarity} {card.def_id} for {price.credits} '
-                      f'(of {credits}) / {price.boosters} (of {card.boosters})')
+                print(f'Upgrade {card} {price} '
+                      f'(you have {credits}/{card.boosters})')
                 credits -= price.credits
                 card.boosters -= price.boosters
 
