@@ -9,6 +9,8 @@ import aiofiles
 import fire
 import motor.motor_asyncio
 from rich.console import Console
+from rich.highlighter import ReprHighlighter
+from rich.table import Table
 from watchfiles import awatch
 from snap_tracker.debug import (
     _replace_dollars_with_underscores_in_keys,
@@ -22,7 +24,14 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
-console = Console()
+console = Console(color_system="truecolor")
+
+_hl = ReprHighlighter()
+
+
+def hl(obj):
+    return _hl(str(obj))
+
 
 class Tracker:
     def __init__(self):
@@ -88,51 +97,20 @@ class Tracker:
         top = sorted(collection.values(), key=lambda c: (c.different_variants, c.boosters))[:10]
         for c in top:
             console.print(c)
+        for ra in Rarity:
+            console.print(str(ra))
 
     async def upgrades(self):
         cards = await self._load_collection()
         profile_state = await self._read_state('Profile')
         profile = profile_state['ServerState']
-        credits = profile['Wallet']['_creditsCurrency']['TotalAmount']
-        console.print(f'Hi {profile["Account"]["Name"]}!\n'
-              f'You have {credits} credits available for upgrades.\n'
-              'This is how you should spend them:\n'
-              )
+        credits = profile['Wallet']['_creditsCurrency'].get('TotalAmount', 900)
+        console.print(f'Hi {profile["Account"]["Name"]}!')
+        console.print(f'You have {credits} credits available for upgrades.')
+        console.rule()
 
-        await self._maximize_collection_level(cards, credits)
-        await self._maximize_splits(cards, credits)
-
-    async def _maximize_splits(self, cards, credits):
-        console.print("To maximize splits:")
-        def _sort_fn(c):
-            return c.splits, c.different_variants, c.boosters
-
-        # Find the highest possible purchase
-        possible_upgrades = []
-        possible_purchases = [p for p in PRICES if p.credits <= credits]
-        for price in possible_purchases:
-            logger.info("Biggest available purchase is %s", price)
-            logger.info("Finding upgradable %s cards, searching for splits: %s", price.rarity, price.is_split)
-            _upgrade_candidates = list(
-                filter(
-                    lambda c: price.rarity in {v.rarity for v in c.variants},
-                    cards.values(),
-                ),
-            )
-            logger.debug("You have %d %s cards", len(_upgrade_candidates), price.rarity)
-            upgrade_candidates = [c for c in _upgrade_candidates if c.boosters >= price.boosters]
-            logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
-            for card in sorted(upgrade_candidates, key=_sort_fn, reverse=True):
-                if price.credits > credits or price.boosters > card.boosters:
-                    continue
-                possible_upgrades.append(card)
-                console.print(
-                    f'Upgrade {card} {price} '
-                    f'(you have {credits}/{card.boosters})'
-                    )
-                credits -= price.credits
-                card.boosters -= price.boosters
-        console.print()
+        console.print(await _maximize_collection_level(cards, credits))
+        console.print(await _maximize_splits(cards, credits))
 
     async def _load_collection(self):
         coll_state = await self._read_state('Collection')
@@ -159,17 +137,68 @@ class Tracker:
             cards[name].variants.add(variant)
         return cards
 
-    async def _maximize_collection_level(self, cards, credits):
-        console.print("To maximize collection level:")
-        potential_cards = sorted((c for c in cards.values() if c.boosters >= 5 and c.number_of_common_variants), key=lambda c: c.number_of_common_variants, reverse=True)
-        collection_level = 0
-        while credits and potential_cards:
-            card = potential_cards.pop(0)
-            upgrades = int(min((credits / 25, card.number_of_common_variants, card.boosters / 5)))
-            console.print(f"Upgrade {upgrades} common variants of {card} for {upgrades * 25} credits and {upgrades * 5} tokens")
-            credits -= upgrades * 25
-            collection_level += upgrades
-        console.print(f'...for total of {collection_level} collection level\n')
+
+async def _maximize_collection_level(cards, credits):
+    table = Table(title="To maximize collection level")
+    table.add_column("X")
+    table.add_column("Card")
+    table.add_column("Credits")
+    table.add_column("Boosters")
+
+    def sort_by(c):
+        return (
+            (c.boosters >= 5 * c.number_of_common_variants) * c.number_of_common_variants,
+            c.splits,
+            c.number_of_common_variants,
+        )
+
+    potential_cards = sorted(
+        (c for c in cards.values() if c.boosters >= 5 and c.number_of_common_variants),
+        key=sort_by,
+        reverse=True
+    )
+    collection_level = 0
+    while credits and potential_cards:
+        card = potential_cards.pop(0)
+        upgrades = int(min((credits / 25, card.number_of_common_variants, card.boosters / 5)))
+        credit_cost = upgrades * 25
+        credits -= credit_cost
+        table.add_row(hl(upgrades), card.def_id, f'{credits} (-{credit_cost})', f'{card.boosters} (-{upgrades * 5})')
+        collection_level += upgrades
+    return table
+
+
+async def _maximize_splits(cards, credits):
+    table = Table(title='To maximize splits')
+    table.add_column('Card')
+    table.add_column('Upgrade')
+    table.add_column('C')
+    table.add_column('B')
+
+    def _sort_fn(c):
+        return c.splits, c.different_variants, c.boosters
+
+    # Find the highest possible purchase
+    possible_purchases = [p for p in PRICES if p.credits <= credits]
+    for price in possible_purchases:
+        logger.info("Biggest available purchase is %s", price)
+        logger.info("Finding upgradable %s cards, searching for splits: %s", price.rarity, price.is_split)
+        _upgrade_candidates = list(
+            filter(
+                lambda c: price.rarity in {v.rarity for v in c.variants},
+                cards.values(),
+            ),
+        )
+        logger.debug("You have %d %s cards", len(_upgrade_candidates), price.rarity)
+        upgrade_candidates = [c for c in _upgrade_candidates if c.boosters >= price.boosters]
+        logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
+        for card in sorted(upgrade_candidates, key=_sort_fn, reverse=True):
+            while price.credits <= credits and price.boosters <= card.boosters:
+                table.add_row(card, price, hl(credits), hl(card.boosters))
+                credits -= price.credits
+                card.boosters -= price.boosters
+                # TODO: Update variant to new quality
+    return table
 
 
 def main():

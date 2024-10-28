@@ -46,7 +46,16 @@ class Rarity(str, Enum):
     INFINITY = 'Infinity'
 
     def __str__(self):
-        return self.name.title()
+        colors = {
+            Rarity.COMMON: 'grey74',
+            Rarity.UNCOMMON: 'chartreuse2',
+            Rarity.RARE: 'steel_blue1',
+            Rarity.EPIC: 'deep_pink1',
+            Rarity.LEGENDARY: 'dark_orange',
+            Rarity.ULTRA: 'plum1',
+            Rarity.INFINITY: 'violet',
+        }
+        return f'[{colors[self]}]{self.name.title()}[reset]'
 
     __repr__ = __str__
 
@@ -59,10 +68,8 @@ class Price:
     boosters: int
     _priority: int
 
-    def __str__(self):
-        return f'{self.rarity} -> {self.target} for {self.credits}/{self.boosters} = {self.collection_points}'
-
-    __repr__ = __str__
+    def __rich__(self):
+        return f'{self.rarity} -> {self.target}'
 
     @property
     def is_split(self):
@@ -88,7 +95,7 @@ class Card:
     def different_variants(self):
         return len({v.variant_id for v in self.variants})
 
-    def __str__(self):
+    def __rich__(self):
         return f'<{self.def_id} ({self.splits}/{self.different_variants})>'
 
     @cached_property
