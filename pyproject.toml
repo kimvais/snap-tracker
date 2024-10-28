@@ -9,6 +9,7 @@ dependencies = [
     "aiofiles",
     "fire",
     "motor",
+    "rich",
     "watchfiles",
 ]
 

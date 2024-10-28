@@ -8,6 +8,7 @@ from collections import Counter
 import aiofiles
 import fire
 import motor.motor_asyncio
+from rich.console import Console
 from watchfiles import awatch
 from snap_tracker.debug import (
     _replace_dollars_with_underscores_in_keys,
@@ -21,7 +22,7 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
-
+console = Console()
 
 class Tracker:
     def __init__(self):
@@ -34,16 +35,16 @@ class Tracker:
             logger.error("No MONGODB_URI set, syncing will not work.")
 
     async def card_stats(self):
-        print('Your best performing cards are:\n')
+        console.print('Your best performing cards are:\n')
         data = await self._read_state('Profile')
         account = data['ServerState']['Account']
         counter = Counter({k: v for k,v in account['CardStats'].items() if isinstance(v, int)})
         for i, (card, points) in enumerate(counter.most_common(20), 1):
-            print(f'#{i}: {card} ({points})')
+            console.print(f'#{i}: {card} ({points})')
 
     async def run(self):
         async for changes in awatch(*self.datadir.glob('*.json')):
-            print(changes)
+            console.print(changes)
 
     async def sync(self):
         logging.info('Using game data directory %s', self.datadir)
@@ -86,14 +87,14 @@ class Tracker:
         collection = await self._load_collection()
         top = sorted(collection.values(), key=lambda c: (c.different_variants, c.boosters))[:10]
         for c in top:
-            print(c)
+            console.print(c)
 
     async def upgrades(self):
         cards = await self._load_collection()
         profile_state = await self._read_state('Profile')
         profile = profile_state['ServerState']
         credits = profile['Wallet']['_creditsCurrency']['TotalAmount']
-        print(f'Hi {profile["Account"]["Name"]}!\n'
+        console.print(f'Hi {profile["Account"]["Name"]}!\n'
               f'You have {credits} credits available for upgrades.\n'
               'This is how you should spend them:\n'
               )
@@ -102,7 +103,7 @@ class Tracker:
         await self._maximize_splits(cards, credits)
 
     async def _maximize_splits(self, cards, credits):
-        print("To maximize splits:")
+        console.print("To maximize splits:")
         def _sort_fn(c):
             return c.splits, c.different_variants, c.boosters
 
@@ -125,13 +126,13 @@ class Tracker:
                 if price.credits > credits or price.boosters > card.boosters:
                     continue
                 possible_upgrades.append(card)
-                print(
+                console.print(
                     f'Upgrade {card} {price} '
                     f'(you have {credits}/{card.boosters})'
                     )
                 credits -= price.credits
                 card.boosters -= price.boosters
-        print()
+        console.print()
 
     async def _load_collection(self):
         coll_state = await self._read_state('Collection')
@@ -159,16 +160,16 @@ class Tracker:
         return cards
 
     async def _maximize_collection_level(self, cards, credits):
-        print("To maximize collection level:")
+        console.print("To maximize collection level:")
         potential_cards = sorted((c for c in cards.values() if c.boosters >= 5 and c.number_of_common_variants), key=lambda c: c.number_of_common_variants, reverse=True)
         collection_level = 0
         while credits and potential_cards:
             card = potential_cards.pop(0)
             upgrades = int(min((credits / 25, card.number_of_common_variants, card.boosters / 5)))
-            print(f"Upgrade {upgrades} common variants of {card} for {upgrades * 25} credits and {upgrades * 5} tokens")
+            console.print(f"Upgrade {upgrades} common variants of {card} for {upgrades * 25} credits and {upgrades * 5} tokens")
             credits -= upgrades * 25
             collection_level += upgrades
-        print(f'...for total of {collection_level} collection level\n')
+        console.print(f'...for total of {collection_level} collection level\n')
 
 
 def main():
