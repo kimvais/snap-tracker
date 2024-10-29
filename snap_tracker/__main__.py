@@ -104,7 +104,7 @@ class Tracker:
         cards = await self._load_collection()
         profile_state = await self._read_state('Profile')
         profile = profile_state['ServerState']
-        credits = profile['Wallet']['_creditsCurrency'].get('TotalAmount', 900)
+        credits = profile['Wallet']['_creditsCurrency'].get('TotalAmount', 0)
         console.print(f'Hi {profile["Account"]["Name"]}!')
         console.print(f'You have {credits} credits available for upgrades.')
         console.rule()
@@ -163,7 +163,7 @@ async def _maximize_collection_level(cards, credits):
         upgrades = int(min((credits / 25, card.number_of_common_variants, card.boosters / 5)))
         credit_cost = upgrades * 25
         credits -= credit_cost
-        table.add_row(hl(upgrades), card.def_id, f'{credits} (-{credit_cost})', f'{card.boosters} (-{upgrades * 5})')
+        table.add_row(hl(upgrades), card.name, f'{credits} (-{credit_cost})', f'{card.boosters} (-{upgrades * 5})')
         collection_level += upgrades
     return table
 

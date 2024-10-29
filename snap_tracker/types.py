@@ -7,6 +7,8 @@ from dataclasses import (
 from enum import Enum
 from functools import cached_property
 
+import stringcase
+
 
 def _calculate_prices():
     _total_costs = (
@@ -95,8 +97,12 @@ class Card:
     def different_variants(self):
         return len({v.variant_id for v in self.variants})
 
+    @property
+    def name(self):
+        return stringcase.titlecase(self.def_id)
+
     def __rich__(self):
-        return f'<{self.def_id} ({self.splits}/{self.different_variants})>'
+        return f'{self.name} <{self.splits}/{self.different_variants}>'
 
     @cached_property
     def number_of_common_variants(self):
