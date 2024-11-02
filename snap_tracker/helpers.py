@@ -1,4 +1,5 @@
 import codecs
+import hashlib
 import json
 import logging
 from functools import wraps
@@ -49,7 +50,8 @@ async def _read_file(fn):
     async with aiofiles.open(fn, 'rb') as f:
         contents = await f.read()
         if contents[:3] == codecs.BOM_UTF8:
-            data = json.loads(contents[3:].decode())
+            data = contents[3:]
+            payload = json.loads(data.decode())
         else:
             raise ValueError(contents[:10])
-        return data
+        return payload

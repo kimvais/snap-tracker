@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -31,7 +32,7 @@ from .types import (
 
 APP_NAME = 'snap-tracker'
 AUTHOR = 'kimvais'
-GAME_STATE_NVPROD_DIRECTORY = r'%LOCALAPPDATA%low\Second Dinner\SNAP\Standalone\States\nvprod'
+GAME_DATA_DIRECTORY = r'%LOCALAPPDATA%low\Second Dinner\SNAP'
 IGNORED_STATES = {'BrazeSdkManagerState', 'TimeModelState'}
 
 logger = logging.getLogger(__name__)
@@ -40,16 +41,24 @@ console = Console(color_system="truecolor")
 
 class Tracker:
     def __init__(self):
-        dir_fn = os.path.expandvars(GAME_STATE_NVPROD_DIRECTORY)
-        self.datadir = pathlib.Path(dir_fn)
+        dir_fn = os.path.expandvars(GAME_DATA_DIRECTORY)
+        self.data_dir = pathlib.Path(dir_fn)
+        self.state_dir = self.data_dir / 'Standalone' / 'States' / 'nvprod'
+        self.player_log_path = self.data_dir / 'Player.log'
+        self.player_log_at = self.player_log_path.stat().st_size
         self.cache_dir = pathlib.Path(platformdirs.user_cache_dir(APP_NAME, AUTHOR))
         os.makedirs(self.cache_dir, exist_ok=True)
-        self.collection = None
+        self.game_state_path = self.state_dir / 'GameState.json'
+
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
             self.db = self._client.raw
         except KeyError:
             logger.error("No MONGODB_URI set, syncing will not work.")
+
+        # Set up the game.
+        self.ongoing_game_id = None
+        self.collection = None
 
     async def _get_account(self):
         data = await self._read_state('Profile')
@@ -72,14 +81,13 @@ class Tracker:
 
     @ensure_collection
     async def run(self):
-        async for changes in awatch(self.datadir):
-            for file_change in changes:
-                await self.log_change(file_change)
+        async for _ in awatch(self.player_log_path, force_polling=True):
+            await self.log_change()
 
     @ensure_collection
     async def sync(self):
-        logging.info('Using game data directory %s', self.datadir)
-        for fn in self.datadir.glob('*.json'):
+        logging.info('Using game data directory %s', self.state_dir)
+        for fn in self.state_dir.glob('*.json'):
             data = await _read_file(fn)
             query = {
                 '_id': fn.stem,
@@ -91,7 +99,7 @@ class Tracker:
             logger.info(result)
 
     async def _read_state(self, name):
-        file_name = self.datadir / f'{name}State.json'
+        file_name = self.state_dir / f'{name}State.json'
         return await _read_file(file_name)
 
     async def parse_game_state(self):
@@ -102,7 +110,7 @@ class Tracker:
 
     @ensure_collection
     async def test(self):
-        state = await self.parse_game_state()
+        state, _ = await self.parse_game_state()
         console.log(state['Players'][0]['$id'])
         console.log(state['Players'][1]['$ref'])
         winner = state.get('Winner')
@@ -137,33 +145,42 @@ class Tracker:
         except ValueError:
             return '[red]No ccommon cards to upgrade.'
 
-    async def log_change(self, file_change):
-        change, filename = file_change
-        state_file = pathlib.Path(filename)
-        if state_file.stem in IGNORED_STATES:
-            return
-        logger.debug('%s: %s', state_file.stem, change.name)
+    async def log_change(self):
         ts = datetime.datetime.now(tz=datetime.UTC)
-        if state_file.stem == 'GameState':
-            state = await self.parse_game_state()
-            fn = f'game_state_{ts.strftime("%Y%m%dT%H%M%S%f")}.json'
-            out_path = AsyncPath(self.cache_dir / fn)
-            turn = state.get('Turn', 0)
-            game_id = state.get('Id')
-            console.log(':game_die: Read game state for ', game_id, 'turn', turn)
+        state = await self.parse_game_state()
+        turn = state.get('Turn', 0)
+        game_id = state.get('Id')
+        console.log(':game_die: Read game state for ', game_id, 'turn', turn)
 
-            if winner := state.get('Winner'):
-                player_id = state['Players'][0]['$id']
-                opponent_id = state['Players'][1]['$ref']
-                winner_id = winner['$ref']
-                if player_id == winner_id:
-                    console.log(":trophy: You won!")
-                elif opponent_id == winner_id:
-                    console.print(":slightly_frowning_face: You lost")
-            async with out_path.open('w+') as f:
-                contents = json.dumps(state, indent=2, sort_keys=True)
-                await f.write(contents)
-                logger.debug('Wrote %d bytes', len(contents))
+        if turn == 0 and self.ongoing_game_id != game_id:
+            console.log('New game', game_id, 'begun!')
+            self.ongoing_game_id = game_id
+
+        fn = f'game_state_{ts.strftime("%Y%m%dT%H%M%S%f")}.json'
+        out_path = AsyncPath(self.cache_dir / fn)
+        async with out_path.open('w+') as f:
+            contents = json.dumps(state)
+            await f.write(contents)
+            console.log('Wrote %d bytes to %s', len(contents), out_path.name)
+
+        winner = state.get('Winner')
+        loser = state.get('Loser')
+        total_turns = state.get('TotalTurns')
+        if winner and loser and turn == total_turns:
+            console.log(winner)
+            await self.handle_game_result(state, winner)
+
+    async def handle_game_result(self, state, winner):
+        player_id = state['Players'][0]['$id']
+        opponent_id = state['Players'][1]['$ref']
+        winner_id = winner['$ref']
+        cubes = state['CubeValue']
+        cubestring = ':ice:' * cubes
+        if player_id == winner_id:
+            console.log(f':trophy: You won {cubestring}!')
+        elif opponent_id == winner_id:
+            console.print(f':slightly_frowning_face: You lost {cubestring}')
+        self.ongoing_game_id = None
 
 
 def main():
