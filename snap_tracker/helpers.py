@@ -2,6 +2,7 @@ import codecs
 import hashlib
 import json
 import logging
+import re
 from functools import wraps
 from typing import Any
 
@@ -10,6 +11,8 @@ import stringcase
 from rich.highlighter import ReprHighlighter
 from rich.protocol import is_renderable
 from rich.table import Table
+
+CARD_STAGING_RE = re.compile(r'StageCard\|CardDefId=(?P<card_def_if>[A-Za-z0-9]+)\|CardEntityId=(?P<card_eid>\d+)\|ZoneEntityId=(?P<zone_eid>\d+)\|Turn=(?P<turn>\d)')
 
 logger = logging.getLogger(__name__)
 
@@ -55,3 +58,9 @@ async def _read_file(fn):
         else:
             raise ValueError(contents[:10])
         return payload
+
+
+def _parse_log_lines(log_lines):
+    for line in log_lines:
+        if m := CARD_STAGING_RE.match(line):
+            yield m.groupdict()

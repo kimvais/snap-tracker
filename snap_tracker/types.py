@@ -1,5 +1,6 @@
 import enum
 import itertools
+import uuid
 from dataclasses import (
     dataclass,
     field,
@@ -36,6 +37,20 @@ def _calculate_prices():
             booster_cost,
             Ranks[to].value,
         )
+
+
+@dataclass
+class Game:
+    id: uuid.UUID = None
+    current_turn: int = 0
+
+    @classmethod
+    def new(cls, game_id: str):
+        cls(id=uuid.UUID(hex=game_id))
+
+    def __eq__(self, __value):
+        other = uuid.UUID(hex=__value)
+        return self.id == other
 
 
 class Rarity(str, Enum):
@@ -91,9 +106,6 @@ class Finish(enum.Enum):
     PRISM = 'prism'
     INK = 'ink'
     GOLD = 'gold'
-
-
-
 
 
 @dataclass(frozen=True)
@@ -165,3 +177,4 @@ class Card:
 class SplitRate:
     finish: dict[Finish, float]
     flare: dict[Flare.Effect, float]
+

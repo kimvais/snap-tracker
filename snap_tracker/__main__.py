@@ -1,10 +1,9 @@
 import datetime
-import hashlib
 import json
 import logging
 import os
-import pathlib
 import sys
+from pathlib import Path
 
 import fire
 import motor.motor_asyncio
@@ -12,7 +11,6 @@ import platformdirs
 from aiopath import AsyncPath
 from rich.console import Console
 from watchfiles import (
-    Change,
     awatch,
 )
 
@@ -20,14 +18,12 @@ from snap_tracker.collection import Collection
 from snap_tracker.debug import (
     _replace_dollars_with_underscores_in_keys,
 )
+from snap_tracker.types import Game
 from .helpers import (
+    _parse_log_lines,
     _read_file,
     ensure_collection,
     rich_table,
-)
-from .types import (
-    PRICES,
-    Rarity,
 )
 
 APP_NAME = 'snap-tracker'
@@ -41,24 +37,24 @@ console = Console(color_system="truecolor")
 
 class Tracker:
     def __init__(self):
-        dir_fn = os.path.expandvars(GAME_DATA_DIRECTORY)
-        self.data_dir = pathlib.Path(dir_fn)
-        self.state_dir = self.data_dir / 'Standalone' / 'States' / 'nvprod'
-        self.player_log_path = self.data_dir / 'Player.log'
-        self.player_log_at = self.player_log_path.stat().st_size
-        self.cache_dir = pathlib.Path(platformdirs.user_cache_dir(APP_NAME, AUTHOR))
-        os.makedirs(self.cache_dir, exist_ok=True)
-        self.game_state_path = self.state_dir / 'GameState.json'
+        # Set up the game.
+        self.ongoing_game: Game | None = None
+        self.collection: Collection | None = None
 
+        dir_fn = os.path.expandvars(GAME_DATA_DIRECTORY)
+        self.data_dir: Path = Path(dir_fn)
+        self.state_dir: Path = self.data_dir / 'Standalone' / 'States' / 'nvprod'
+        self.player_log_path: Path = self.data_dir / 'Player.log'
+        self.player_log_at: int = self.player_log_path.stat().st_size
+        self.cache_dir: Path = Path(platformdirs.user_cache_dir(APP_NAME, AUTHOR))
+        self.game_state_path: Path = self.state_dir / 'GameState.json'
+
+        os.makedirs(self.cache_dir, exist_ok=True)
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
             self.db = self._client.raw
         except KeyError:
             logger.error("No MONGODB_URI set, syncing will not work.")
-
-        # Set up the game.
-        self.ongoing_game_id = None
-        self.collection = None
 
     async def _get_account(self):
         data = await self._read_state('Profile')
@@ -82,7 +78,7 @@ class Tracker:
     @ensure_collection
     async def run(self):
         async for _ in awatch(self.player_log_path, force_polling=True):
-            await self.log_change()
+            await self._process_changes()
 
     @ensure_collection
     async def sync(self):
@@ -145,23 +141,32 @@ class Tracker:
         except ValueError:
             return '[red]No ccommon cards to upgrade.'
 
-    async def log_change(self):
-        ts = datetime.datetime.now(tz=datetime.UTC)
+    async def _process_changes(self):
+        staged_turn = 0
+        new_log_lines = await self._read_player_log()
+        for card_staging in _parse_log_lines(new_log_lines):
+            console.log(card_staging)
+            staged_turn = max((card_staging['turn'], staged_turn))
         state = await self.parse_game_state()
         turn = state.get('Turn', 0)
         game_id = state.get('Id')
         console.log(':game_die: Read game state for ', game_id, 'turn', turn)
 
-        if turn == 0 and self.ongoing_game_id != game_id:
-            console.log('New game', game_id, 'begun!')
-            self.ongoing_game_id = game_id
+        if self.ongoing_game is None:
+            if turn == 0 and self.ongoing_game != game_id:
+                console.log('New game', game_id, 'begun!')
+                self.ongoing_game = Game.new(game_id)
+            else:
+                return
+        else:
+            current_turn = max((self.ongoing_game.current_turn, turn, staged_turn))
+            console.log('Setting turn to', current_turn)
+            self.ongoing_game.current_turn = current_turn
 
-        fn = f'game_state_{ts.strftime("%Y%m%dT%H%M%S%f")}.json'
-        out_path = AsyncPath(self.cache_dir / fn)
-        async with out_path.open('w+') as f:
-            contents = json.dumps(state)
-            await f.write(contents)
-            console.log('Wrote %d bytes to %s', len(contents), out_path.name)
+        if turn >= staged_turn:
+            await self._save_state_snapshot(state)
+        else:
+            console.log('Stale state, not saving.')
 
         winner = state.get('Winner')
         loser = state.get('Loser')
@@ -169,6 +174,24 @@ class Tracker:
         if winner and loser and turn == total_turns:
             console.log(winner)
             await self.handle_game_result(state, winner)
+
+    async def _read_player_log(self):
+        with self.player_log_path.open() as f:
+            f.seek(self.player_log_at)
+            lines = f.readlines()
+            new_pos = f.tell()
+            console.log(f'Read {new_pos - self.player_log_at:d} bytes, {len(lines)} lines of Player.log')
+            self.player_log_at = new_pos
+        return lines
+
+    async def _save_state_snapshot(self, state):
+        ts = datetime.datetime.now(tz=datetime.UTC)
+        fn = f'game_state_{ts.strftime("%Y%m%dT%H%M%S%f")}.json'
+        out_path = AsyncPath(self.cache_dir / fn)
+        async with out_path.open('w+') as f:
+            contents = json.dumps(state)
+            await f.write(contents)
+            console.log(f'Wrote {len(contents):d} bytes to {out_path.name}')
 
     async def handle_game_result(self, state, winner):
         player_id = state['Players'][0]['$id']
@@ -180,7 +203,7 @@ class Tracker:
             console.log(f':trophy: You won {cubestring}!')
         elif opponent_id == winner_id:
             console.print(f':slightly_frowning_face: You lost {cubestring}')
-        self.ongoing_game_id = None
+        self.ongoing_game = None
 
 
 def main():
