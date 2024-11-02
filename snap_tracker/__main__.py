@@ -119,6 +119,7 @@ class Tracker:
         profile_state = await self._read_state('Profile')
         profile = profile_state['ServerState']
         credits = profile['Wallet']['_creditsCurrency'].get('TotalAmount', 200)
+        credits = 1250
         console.print(f'Hi {profile["Account"]["Name"]}!')
         console.print(f'You have {credits} credits available for upgrades.')
         console.rule()

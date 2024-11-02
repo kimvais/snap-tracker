@@ -1,10 +1,14 @@
 [project]
 name = "snap-tracker"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.1.1"
+authors = [
+    {name="Kimmo Parviainen-Jalanko", email="kimvais@kimva.is"},
+]
+description = "Collection and game tracker for Marvel Snap. Work in progress."
 readme = "README.md"
 requires-python = ">=3.12"
-
+license = {text = "MIT License"}
+keywords = ["Marvel Snap"]
 dependencies = [
     "aiofiles",
     "fire",
@@ -13,6 +17,18 @@ dependencies = [
     "stringcase",
     "watchfiles",
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Games/Entertainment",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/kimvais/snap-tracker/"
+Repository = "https://github.com/kimvais/snap-tracker.git"
+Issues = "https://github.com/kimvais/snap-tracker/issues"
 
 [project.optional-dependencies]
 dev = [
