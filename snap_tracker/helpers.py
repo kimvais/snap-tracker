@@ -41,12 +41,19 @@ def ensure_collection(func):
     """
     @wraps(func)
     async def wrapper(self, *args, **kwargs):
-        # Await the hardcoded method from the same instance (`self`)
         await self._load_collection()
         return await func(self, *args, **kwargs)
 
     return wrapper
 
+
+def ensure_account(func):
+    @wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        await self._load_profile()
+        return await func(self, *args, **kwargs)
+
+    return wrapper
 
 async def _read_file(fn):
     logger.debug("loading %s", fn.stem)

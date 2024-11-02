@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import fire
 import motor.motor_asyncio
@@ -22,6 +23,7 @@ from snap_tracker.types import Game
 from .helpers import (
     _parse_log_lines,
     _read_file,
+    ensure_account,
     ensure_collection,
     rich_table,
 )
@@ -40,6 +42,7 @@ class Tracker:
         # Set up the game.
         self.ongoing_game: Game | None = None
         self.collection: Collection | None = None
+        self._profile: dict[str, Any] | None = None
 
         dir_fn = os.path.expandvars(GAME_DATA_DIRECTORY)
         self.data_dir: Path = Path(dir_fn)
@@ -56,10 +59,12 @@ class Tracker:
         except KeyError:
             logger.error("No MONGODB_URI set, syncing will not work.")
 
-    async def _get_account(self):
-        data = await self._read_state('Profile')
-        account = data['ServerState']['Account']
-        return account
+    async def _load_profile(self):
+        self._profile = (await self._read_state('Profile'))['ServerState']
+
+    @property
+    def account(self):
+        return self._profile['Account']
 
     @ensure_collection
     async def card_stats(self):
@@ -114,20 +119,18 @@ class Tracker:
 
     @ensure_collection
     async def upgrades(self):
-        profile_state = await self._read_state('Profile')
-        profile = profile_state['ServerState']
-        credits_ = profile['Wallet']['_creditsCurrency'].get('TotalAmount', 0)
-        console.print(f'Hi {profile["Account"]["Name"]}!')
+        credits_ = self._profile['Wallet']['_creditsCurrency'].get('TotalAmount', 0)
+        console.print(f'Hi {self.account["Name"]}!')
         console.print(f'You have {credits_} credits_ available for upgrades.')
         console.rule()
 
         console.print(self._find_commons(credits_))
         console.print(self._find_splits(credits_))
 
+    @ensure_account
     async def _load_collection(self):
-        account = await self._get_account()
         coll_state = await self._read_state('Collection')
-        self.collection = Collection(account, coll_state['ServerState'])
+        self.collection = Collection(self.account, coll_state['ServerState'])
 
     def _find_splits(self, credits_):
         try:
@@ -146,13 +149,17 @@ class Tracker:
         new_log_lines = await self._read_player_log()
         for card_staging in _parse_log_lines(new_log_lines):
             console.log(card_staging)
-            staged_turn = max((card_staging['turn'], staged_turn))
+            staged_turn = max((int(card_staging['turn']), staged_turn))
         state = await self.parse_game_state()
         turn = state.get('Turn', 0)
         game_id = state.get('Id')
         console.log(':game_die: Read game state for ', game_id, 'turn', turn)
 
-        if self.ongoing_game is None:
+        if result := state.get('ClientResultMessage'):
+            console.log(result)
+            await self.handle_game_result(result)
+
+        elif self.ongoing_game is None:
             if turn == 0 and self.ongoing_game != game_id:
                 console.log('New game', game_id, 'begun!')
                 self.ongoing_game = Game.new(game_id)
@@ -163,17 +170,11 @@ class Tracker:
             console.log('Setting turn to', current_turn)
             self.ongoing_game.current_turn = current_turn
 
-        if turn >= staged_turn:
-            await self._save_state_snapshot(state)
-        else:
+        if staged_turn > self.ongoing_game.current_turn:
             console.log('Stale state, not saving.')
+        else:
+            await self._save_state_snapshot(state)
 
-        winner = state.get('Winner')
-        loser = state.get('Loser')
-        total_turns = state.get('TotalTurns')
-        if winner and loser and turn == total_turns:
-            console.log(winner)
-            await self.handle_game_result(state, winner)
 
     async def _read_player_log(self):
         with self.player_log_path.open() as f:
@@ -193,15 +194,16 @@ class Tracker:
             await f.write(contents)
             console.log(f'Wrote {len(contents):d} bytes to {out_path.name}')
 
-    async def handle_game_result(self, state, winner):
-        player_id = state['Players'][0]['$id']
-        opponent_id = state['Players'][1]['$ref']
-        winner_id = winner['$ref']
-        cubes = state['CubeValue']
+    async def handle_game_result(self, result):
+        grai = result['GameResultAccountItems']
+        is_winner = grai.get('IsWinner', False)
+        is_loser = grai.get('IsLoser', False)
+        assert is_winner != is_loser
+        cubes = grai.get('FinalCubeValue')
         cubestring = ':ice:' * cubes
-        if player_id == winner_id:
+        if is_winner:
             console.log(f':trophy: You won {cubestring}!')
-        elif opponent_id == winner_id:
+        else:
             console.print(f':slightly_frowning_face: You lost {cubestring}')
         self.ongoing_game = None
 
