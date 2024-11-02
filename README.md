@@ -17,13 +17,21 @@ snap-tracker (card_stats|upgrades)
 Other commands are not in useful state, but you can see them with `snap-tracker help`. Use them at your own risk.
 
 ### Card stats
-`snap-tracker card_stats` shows all cards in your collection based on their performance ranked by the values found in `AccountState` under `['Account']['CardStats']`
+To show all cards in your collection based on their performance ranked by the values found in `AccountState` 
+under `['Account']['CardStats']`:
+```powershell 
+snap-tracker card_stats
+```
 
 ![Screenshot of output of snap-tracker card_stats](https://github.com/kimvais/snap-tracker/blob/master/doc/screenshot_card_stats.png?raw=true)
 
 ### Upgrades
 
-`snap-tracker upgrades` will show you cards in your collection for which  you have enough boosters and credits to upgrade.
+To show the cards in your collection for which you have enough boosters and credits to upgrade:
+
+```PowerShell
+snap-tracker upgrades
+```
 
 ![Screenshot of output of snap-tracker upgrades](https://github.com/kimvais/snap-tracker/blob/master/doc/screenshot_upgrades.png?raw=true)
 
