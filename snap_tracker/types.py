@@ -86,12 +86,64 @@ class Price:
 PRICES = sorted(_calculate_prices(), key=lambda price: (price._priority, price.credits))
 
 
+class Finish(enum.Enum):
+    FOIL = 'foil'
+    PRISM = 'prism'
+    INK = 'ink'
+    GOLD = 'gold'
+
+
+
+
+
+@dataclass(frozen=True)
+class Flare:
+    class Effect(enum.Enum):
+        # Names are in-game English names.
+        # Values are CardRevealEffectDefId's
+
+        GLIMMER = 'glimmer'
+        TONE = 'comic'
+        STARDUST = 'sparkle'
+        KRACKLE = 'kirby'
+
+    class Color(enum.Enum):
+        WHITE = 'white'
+        BLACK = 'black'
+        RED = 'red'
+        PURPLE = 'purple'
+        GREEN = 'green'
+        RAINBOW = 'rainbow'
+
+    effect: Effect
+    color: Color = None
+
+    @classmethod
+    def from_def(cls, flare_def_id):
+        if flare_def_id is None:
+            return None
+        flare_name, *_rem = stringcase.snakecase(flare_def_id).split('_', 1)
+        color = cls.Color(next(_rem)) if _rem else None
+        return cls(cls.Effect(flare_name), color)
+
+
+@dataclass(frozen=True)
+class CardVariant:
+    variant_id: str
+    rarity: Rarity
+    finish: Finish = None
+    flare: Flare = None
+    is_split: bool = False
+    is_favourite: bool = False
+
+
 @dataclass
 class Card:
     def_id: str
     boosters: int
     splits: int = 0
-    variants: set = field(default_factory=set)
+    variants: set[CardVariant] = field(default_factory=set)
+    score: int = 0
 
     @cached_property
     def different_variants(self):
@@ -102,36 +154,14 @@ class Card:
         return stringcase.titlecase(self.def_id)
 
     def __rich__(self):
-        return f'{self.name} <{self.splits}/{self.different_variants}>'
+        return f'{self.name} <{self.splits}/{self.different_variants}> ({self.score})'
 
     @cached_property
     def number_of_common_variants(self):
         return sum(1 for v in self.variants if v.rarity == Rarity.COMMON)
 
 
-@dataclass(frozen=True)
-class CardVariant:
-    variant_id: str
-    rarity: Rarity
-    is_split: bool = False
-    is_favourite: bool = False
-
-
-class Finish(enum.Enum):
-    FOIL = 'foil'
-    PRISM = 'prism'
-    INK = 'ink'
-    GOLD = 'gold'
-
-
-class Flare(enum.Enum):
-    GLIMMER = 'glimmer'
-    TONE = 'tone'
-    STARDUST = 'stardust'
-    KRACKLE = 'krackle'
-
-
 @dataclass
 class SplitRate:
     finish: dict[Finish, float]
-    flare: dict[Flare, float]
+    flare: dict[Flare.Effect, float]

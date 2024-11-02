@@ -67,8 +67,8 @@ def get_split_rate(splits):
                     Finish.PRISM: 0.5,
                 },
                 {
-                    Flare.TONE: 0.5,
-                    Flare.GLIMMER: 0.5,
+                    Flare.Effect.TONE: 0.5,
+                    Flare.Effect.GLIMMER: 0.5,
                 },
             )
         case 4:
@@ -79,9 +79,9 @@ def get_split_rate(splits):
                     Finish.INK: 0.35,
                 },
                 {
-                    Flare.TONE: 1/3,
-                    Flare.GLIMMER: 1/3,
-                    Flare.STARDUST: 1/3,
+                    Flare.Effect.TONE: 1 / 3,
+                    Flare.Effect.GLIMMER: 1 / 3,
+                    Flare.Effect.STARDUST: 1 / 3,
                 },
             )
         case 5:
@@ -93,9 +93,9 @@ def get_split_rate(splits):
                     Finish.GOLD: 0.35,
                 },
                 {
-                    Flare.TONE: 1 / 3,
-                    Flare.GLIMMER: 1 / 3,
-                    Flare.STARDUST: 1 / 3,
+                    Flare.Effect.TONE: 1 / 3,
+                    Flare.Effect.GLIMMER: 1 / 3,
+                    Flare.Effect.STARDUST: 1 / 3,
                 },
             )
         case _:
@@ -107,9 +107,9 @@ def get_split_rate(splits):
                     Finish.GOLD: 0.35,
                 },
                 {
-                    Flare.TONE: 0.65 / 3,
-                    Flare.GLIMMER: 0.65 / 3,
-                    Flare.STARDUST: 0.65 / 3,
-                    Flare.KRACKLE: 0.35,
+                    Flare.Effect.TONE: 0.65 / 3,
+                    Flare.Effect.GLIMMER: 0.65 / 3,
+                    Flare.Effect.STARDUST: 0.65 / 3,
+                    Flare.Effect.KRACKLE: 0.35,
                 },
             )

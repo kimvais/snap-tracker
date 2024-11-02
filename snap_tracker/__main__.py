@@ -8,6 +8,7 @@ from collections import Counter
 import aiofiles
 import fire
 import motor.motor_asyncio
+import stringcase
 from rich.console import Console
 from rich.highlighter import ReprHighlighter
 from rich.table import Table
@@ -19,9 +20,13 @@ from snap_tracker.debug import (
 from .types import (
     Card,
     CardVariant,
+    Finish,
+    Flare,
     PRICES,
     Rarity,
 )
+
+GAME_STATE_NVPROD_DIRECTORY = r'%LOCALAPPDATA%low\Second Dinner\SNAP\Standalone\States\nvprod'
 
 logger = logging.getLogger(__name__)
 console = Console(color_system="truecolor")
@@ -35,7 +40,7 @@ def hl(obj):
 
 class Tracker:
     def __init__(self):
-        dir_fn = os.path.expandvars(r'%LOCALAPPDATA%low\Second Dinner\SNAP\Standalone\States\nvprod')
+        dir_fn = os.path.expandvars(GAME_STATE_NVPROD_DIRECTORY)
         self.datadir = pathlib.Path(dir_fn)
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
@@ -43,13 +48,27 @@ class Tracker:
         except KeyError:
             logger.error("No MONGODB_URI set, syncing will not work.")
 
-    async def card_stats(self):
-        console.print('Your best performing cards are:\n')
+    async def _get_account(self):
         data = await self._read_state('Profile')
         account = data['ServerState']['Account']
-        counter = Counter({k: v for k,v in account['CardStats'].items() if isinstance(v, int)})
-        for i, (card, points) in enumerate(counter.most_common(20), 1):
-            console.print(f'#{i}: {card} ({points})')
+        return account
+
+    async def _get_card_stats(self):
+        account = await self._get_account()
+        counter = Counter({k: v for k, v in account['CardStats'].items() if isinstance(v, int)})
+        return sorted(counter.items(), key=lambda t: t[1], reverse=True)
+
+    async def card_stats(self):
+        cards = await self._load_collection()
+        table = Table(title='Your best performing cards')
+        table.add_column('Rank')
+        table.add_column('Score')
+        table.add_column('Card')
+        table.add_column('Variants')
+        table.add_column('Splits')
+        for i, card in enumerate(sorted(cards.values(), key=lambda c: c.score, reverse=True), 1):
+            table.add_row(hl(i), hl(card.score), card.name, hl(len(card.variants)), hl(card.splits))
+        console.print(table)
 
     async def run(self):
         async for changes in awatch(*self.datadir.glob('*.json')):
@@ -104,7 +123,7 @@ class Tracker:
         cards = await self._load_collection()
         profile_state = await self._read_state('Profile')
         profile = profile_state['ServerState']
-        credits = profile['Wallet']['_creditsCurrency'].get('TotalAmount', 0)
+        credits = profile['Wallet']['_creditsCurrency'].get('TotalAmount', 200)
         console.print(f'Hi {profile["Account"]["Name"]}!')
         console.print(f'You have {credits} credits available for upgrades.')
         console.rule()
@@ -115,12 +134,14 @@ class Tracker:
     async def _load_collection(self):
         coll_state = await self._read_state('Collection')
         collection = coll_state['ServerState']
+        card_scores = dict(await self._get_card_stats())
         cards = {}
         # Read card statistics
         for k, v in collection['CardDefStats']['Stats'].items():
             if not isinstance(v, dict):
                 continue
-            cards[k] = Card(k, splits=v.get('InfinitySplitCount', 0), boosters=v.get('Boosters', 0))
+            score = card_scores.get(k, 0)
+            cards[k] = Card(k, splits=v.get('InfinitySplitCount', 0), boosters=v.get('Boosters', 0), score=score)
         # Read variants
         for card_dict in collection['Cards']:
             if card_dict.get('Custom', False):
@@ -128,11 +149,19 @@ class Tracker:
             name = card_dict['CardDefId']
             variant_id = card_dict.get('ArtVariantDefId', 'Default')
             rarity = Rarity(card_dict['RarityDefId'])
+            if finish_def := card_dict.get('SurfaceFlare.EffectDefId'):
+                finish = Finish(stringcase.snakecase(finish_def).split('_', 1)[0])
+            else:
+                finish = None
+            flare = Flare.from_def(card_dict.get('CardRevealFlare.EffectDefId'))
+
             variant = CardVariant(
                 variant_id,
                 rarity,
-                card_dict.get('Split', False),
-                card_dict.get('Custom', False),
+                finish=finish,
+                flare=flare,
+                is_split=card_dict.get('Split', False),
+                is_favourite=card_dict.get('Custom', False),
             )
             cards[name].variants.add(variant)
         return cards
@@ -147,6 +176,7 @@ async def _maximize_collection_level(cards, credits):
 
     def sort_by(c):
         return (
+            c.boosters,
             (c.boosters >= 5 * c.number_of_common_variants) * c.number_of_common_variants,
             c.splits,
             c.number_of_common_variants,
