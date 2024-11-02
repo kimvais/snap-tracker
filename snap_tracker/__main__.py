@@ -10,13 +10,12 @@ import fire
 import motor.motor_asyncio
 import stringcase
 from rich.console import Console
-from rich.highlighter import ReprHighlighter
-from rich.table import Table
 from watchfiles import awatch
 from snap_tracker.debug import (
     _replace_dollars_with_underscores_in_keys,
     find_cards,
 )
+from .helpers import rich_table
 from .types import (
     Card,
     CardVariant,
@@ -30,12 +29,6 @@ GAME_STATE_NVPROD_DIRECTORY = r'%LOCALAPPDATA%low\Second Dinner\SNAP\Standalone\
 
 logger = logging.getLogger(__name__)
 console = Console(color_system="truecolor")
-
-_hl = ReprHighlighter()
-
-
-def hl(obj):
-    return _hl(str(obj))
 
 
 class Tracker:
@@ -60,14 +53,16 @@ class Tracker:
 
     async def card_stats(self):
         cards = await self._load_collection()
-        table = Table(title='Your best performing cards')
-        table.add_column('Rank')
-        table.add_column('Score')
-        table.add_column('Card')
-        table.add_column('Variants')
-        table.add_column('Splits')
+        data = []
         for i, card in enumerate(sorted(cards.values(), key=lambda c: c.score, reverse=True), 1):
-            table.add_row(hl(i), hl(card.score), card.name, hl(len(card.variants)), hl(card.splits))
+            data.append({
+                'rank': i,
+                'score': card.score,
+                'card': card.name,
+                'variants': len(card.variants),
+                'splits': card.splits,
+            })
+        table = rich_table(data, title='your best performing cards')
         console.print(table)
 
     async def run(self):
@@ -168,12 +163,6 @@ class Tracker:
 
 
 async def _maximize_collection_level(cards, credits):
-    table = Table(title="To maximize collection level")
-    table.add_column("X")
-    table.add_column("Card")
-    table.add_column("Credits")
-    table.add_column("Boosters")
-
     def sort_by(c):
         return (
             c.boosters,
@@ -188,26 +177,27 @@ async def _maximize_collection_level(cards, credits):
         reverse=True
     )
     collection_level = 0
+    upgrades = []
     while credits and potential_cards:
         card = potential_cards.pop(0)
-        upgrades = int(min((credits / 25, card.number_of_common_variants, card.boosters / 5)))
+        n = int(min((credits / 25, card.number_of_common_variants, card.boosters / 5)))
         credit_cost = upgrades * 25
         credits -= credit_cost
-        table.add_row(hl(upgrades), card.name, f'{credits} (-{credit_cost})', f'{card.boosters} (-{upgrades * 5})')
+        upgrades.append({
+            'x': n,
+            'card': card.name,
+            'credits': f'{credits} (-{credit_cost})',
+            'boosters': f'{card.boosters} (-{upgrades * 5})'
+        })
         collection_level += upgrades
-    return table
+    return rich_table(upgrades, title='to maximize collection level')
 
 
 async def _maximize_splits(cards, credits):
-    table = Table(title='To maximize splits')
-    table.add_column('Card')
-    table.add_column('Upgrade')
-    table.add_column('C')
-    table.add_column('B')
-
     def _sort_fn(c):
         return c.splits, c.different_variants, c.boosters
 
+    upgrades = []
     # Find the highest possible purchase
     possible_purchases = [p for p in PRICES if p.credits <= credits]
     for price in possible_purchases:
@@ -224,11 +214,16 @@ async def _maximize_splits(cards, credits):
         logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
         for card in sorted(upgrade_candidates, key=_sort_fn, reverse=True):
             while price.credits <= credits and price.boosters <= card.boosters:
-                table.add_row(card, price, hl(credits), hl(card.boosters))
+                upgrades.append({
+                    'card': card,
+                    'upgrade': price,
+                    'c': credits,
+                    'B': card.boosters,
+                })
                 credits -= price.credits
                 card.boosters -= price.boosters
                 # TODO: Update variant to new quality
-    return table
+    return rich_table(upgrades, title='to maximize splits')
 
 
 def main():
