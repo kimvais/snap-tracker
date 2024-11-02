@@ -8,7 +8,7 @@ description = "Collection and game tracker for Marvel Snap. Work in progress."
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT License"}
-keywords = ["Marvel Snap"]
+keywords = ["Marvel Snap", "MarvelSnap"]
 dependencies = [
     "aiofiles",
     "fire",
