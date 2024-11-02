@@ -10,9 +10,10 @@ requires-python = ">=3.12"
 license = {text = "MIT License"}
 keywords = ["Marvel Snap", "MarvelSnap"]
 dependencies = [
-    "aiofiles",
+    "aiopath",
     "fire",
     "motor",
+    "platformdirs",
     "rich",
     "stringcase",
     "watchfiles",

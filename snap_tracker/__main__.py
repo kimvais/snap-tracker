@@ -1,16 +1,23 @@
+import datetime
+import json
 import logging
 import os
 import pathlib
+import sys
 
 import fire
 import motor.motor_asyncio
+import platformdirs
+from aiopath import AsyncPath
 from rich.console import Console
-from watchfiles import awatch
+from watchfiles import (
+    Change,
+    awatch,
+)
 
 from snap_tracker.collection import Collection
 from snap_tracker.debug import (
     _replace_dollars_with_underscores_in_keys,
-    find_cards,
 )
 from .helpers import (
     _read_file,
@@ -22,7 +29,10 @@ from .types import (
     Rarity,
 )
 
+APP_NAME = 'snap-tracker'
+AUTHOR = 'kimvais'
 GAME_STATE_NVPROD_DIRECTORY = r'%LOCALAPPDATA%low\Second Dinner\SNAP\Standalone\States\nvprod'
+IGNORED_STATES = {'BrazeSdkManagerState', 'TimeModelState'}
 
 logger = logging.getLogger(__name__)
 console = Console(color_system="truecolor")
@@ -32,6 +42,8 @@ class Tracker:
     def __init__(self):
         dir_fn = os.path.expandvars(GAME_STATE_NVPROD_DIRECTORY)
         self.datadir = pathlib.Path(dir_fn)
+        self.cache_dir = pathlib.Path(platformdirs.user_cache_dir(APP_NAME, AUTHOR))
+        os.makedirs(self.cache_dir, exist_ok=True)
         self.collection = None
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
@@ -60,8 +72,9 @@ class Tracker:
 
     @ensure_collection
     async def run(self):
-        async for changes in awatch(*self.datadir.glob('*.json')):
-            console.print(changes)
+        async for changes in awatch(self.datadir):
+            for file_change in changes:
+                await self.log_change(file_change)
 
     @ensure_collection
     async def sync(self):
@@ -84,20 +97,16 @@ class Tracker:
     async def parse_game_state(self):
         data = await self._read_state('Game')
         game_state = data['RemoteGame']['GameState']
-        _player, _opponent = data['RemoteGame']['GameState']['Players']
-        for stack, cards in find_cards(game_state):
-            logger.info('%s: %s', stack, type(cards))
-        return data
+        # _player, _opponent = game_state['Players']
+        return game_state
 
     @ensure_collection
     async def test(self):
-        for price in PRICES:
-            logger.debug("Upgrade price: %s", price)
-        top = sorted(self.collection.values(), key=lambda c: (c.different_variants, c.boosters))[:10]
-        for c in top:
-            console.print(c)
-        for ra in Rarity:
-            console.print(str(ra))
+        state = await self.parse_game_state()
+        console.log(state['Players'][0]['$id'])
+        console.log(state['Players'][1]['$ref'])
+        winner = state.get('Winner')
+        console.log(winner['$ref'])
 
     @ensure_collection
     async def upgrades(self):
@@ -128,10 +137,41 @@ class Tracker:
         except ValueError:
             return '[red]No ccommon cards to upgrade.'
 
+    async def log_change(self, file_change):
+        change, filename = file_change
+        state_file = pathlib.Path(filename)
+        if state_file.stem in IGNORED_STATES:
+            return
+        logger.debug('%s: %s', state_file.stem, change.name)
+        ts = datetime.datetime.now(tz=datetime.UTC)
+        if state_file.stem == 'GameState':
+            state = await self.parse_game_state()
+            fn = f'game_state_{ts.strftime("%Y%m%dT%H%M%S%f")}.json'
+            out_path = AsyncPath(self.cache_dir / fn)
+            turn = state.get('Turn', 0)
+            game_id = state.get('Id')
+            console.log(':game_die: Read game state for ', game_id, 'turn', turn)
+
+            if winner := state.get('Winner'):
+                player_id = state['Players'][0]['$id']
+                opponent_id = state['Players'][1]['$ref']
+                winner_id = winner['$ref']
+                if player_id == winner_id:
+                    console.log(":trophy: You won!")
+                elif opponent_id == winner_id:
+                    console.print(":slightly_frowning_face: You lost")
+            async with out_path.open('w+') as f:
+                contents = json.dumps(state, indent=2, sort_keys=True)
+                await f.write(contents)
+                logger.debug('Wrote %d bytes', len(contents))
+
 
 def main():
     logging.basicConfig(level=logging.ERROR)
-    fire.Fire(Tracker)
+    try:
+        fire.Fire(Tracker)
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 
 if __name__ == '__main__':
