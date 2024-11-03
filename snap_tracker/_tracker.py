@@ -1,17 +1,20 @@
+import asyncio
 import datetime
+import hashlib
 import json
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import motor.motor_asyncio
 import platformdirs
 from aiopath import AsyncPath
-from rich.console import Console
 from watchfiles import awatch
 
+from snap_tracker._console import console
 from snap_tracker._game_log import (
     GameLogEvent,
     GameLogFileState,
@@ -25,6 +28,7 @@ from snap_tracker.helpers import (
     ensure_account,
     ensure_collection,
     rich_table,
+    write_volume_caches,
 )
 from snap_tracker.types import (
     Game,
@@ -32,9 +36,21 @@ from snap_tracker.types import (
 
 APP_NAME = 'snap-tracker'
 AUTHOR = 'kimvais'
+FILESYSTEM_SYNC_INTERVAL = 2  # Seconds
 GAME_DATA_DIRECTORY = r'%LOCALAPPDATA%low\Second Dinner\SNAP'
 logger = logging.getLogger(__name__)
-console = Console(color_system="truecolor")
+
+
+@dataclass
+class GameStateFile:
+    path: Path
+    sha2: str
+
+    @classmethod
+    def from_path(cls, path: Path):
+        with path.open('rb') as f:
+            sha2 = hashlib.sha256(f.read()).hexdigest()
+        return cls(path, sha2)
 
 
 class Tracker:
@@ -51,7 +67,7 @@ class Tracker:
         self.error_log = GameLogFileState.from_path(self.data_dir / 'ErrorLog.txt')
         self.player_log = GameLogFileState.from_path(self.data_dir / 'Player.log')
         self.cache_dir: Path = Path(platformdirs.user_cache_dir(APP_NAME, AUTHOR))
-        self.game_state_path: Path = self.state_dir / 'GameState.json'
+        self.game_state = GameStateFile.from_path(self.state_dir / 'GameState.json')
 
         os.makedirs(self.cache_dir, exist_ok=True)
         try:
@@ -88,6 +104,7 @@ class Tracker:
 
     @ensure_collection
     async def run(self):
+        self._setup_task_for_ensuring_disk_writes()
         console.log('Watching for file changes')
         async for changes in awatch(self.player_log.path, self.error_log.path, force_polling=True):
             for change in changes:
@@ -117,13 +134,11 @@ class Tracker:
         # _player, _opponent = game_state['Players']
         return game_state
 
-    @ensure_collection
-    async def test(self):
-        state, _ = await self.parse_game_state()
-        console.log(state['Players'][0]['$id'])
-        console.log(state['Players'][1]['$ref'])
-        winner = state.get('Winner')
-        console.log(winner['$ref'])
+    def _setup_task_for_ensuring_disk_writes(self):
+        loop = asyncio.get_running_loop()
+        drive = self.game_state.path.drive
+        driveletter = drive[0]
+        asyncio.ensure_future(write_volume_caches(FILESYSTEM_SYNC_INTERVAL, driveletter), loop=loop)
 
     @ensure_collection
     async def upgrades(self):
@@ -153,11 +168,12 @@ class Tracker:
             return '[red]No ccommon cards to upgrade.'
 
     def _update_current_turn(self, turn, game_id):
-        console.log('Setting turn to', turn)
         if self.ongoing_game is None:
             # Tracked was started mid-game
-            self.ongoing_game = Game.new(game_id, current_turn=(turn))
-        else:
+            self.ongoing_game = Game(game_id, current_turn=(turn))
+            console.log('Started tracking game', game_id, 'on turn:', turn)
+        elif turn > self.ongoing_game.current_turn:
+            console.log('Setting turn to', turn)
             self.ongoing_game.current_turn = turn
 
     async def _process_change(self, change):
@@ -182,7 +198,7 @@ class Tracker:
             game_id = None
         # console.log(':game_die: Read game state for ', game_id, 'turn', turn_in_state)
         for log_event in _parse_log_lines(new_log_lines):
-            console.log(log_event)
+            logger.debug(log_event)
             match log_event.type:
                 case GameLogEvent.Type.GAME_START:
                     game_id = uuid.UUID(hex=log_event.data['game_id'])
@@ -193,7 +209,12 @@ class Tracker:
                     self._update_current_turn(int(log_event.data['turn']), game_id)
                     continue
                 case GameLogEvent.Type.GAME_END:
-                    console.log('Got game results, but state is not updated :slightly_frowning_face:')
+                    console.log('Got game results, trying to find results from state.')
+                    state = await self.parse_game_state()
+                    if result := state.get('ClientResultMessage'):
+                        await self.handle_game_result(result)
+                        return
+                    console.log('State has not been updated :slightly_frowning_face:')
                 case GameLogEvent.Type.CARD_STAGED:
                     staged_turn = max((int(log_event.data['turn']), staged_turn))
                     if turn_in_state < staged_turn:
@@ -207,12 +228,12 @@ class Tracker:
             console.log('Game id mismatch', {'state': game_id, 'tracker': self.ongoing_game})
             return
 
-        if not turn_in_state and game_id:
+        if not turn_in_state and self.ongoing_game is None and game_id:
             console.log('Got game_id', game_id, 'starting.')
             self.ongoing_game = Game(game_id)
         elif self.ongoing_game is not None and game_id:
             if turn_in_state < self.ongoing_game.current_turn:
-                console.log('Stale state, not saving.')
+                logger.debug('Stale state, not saving.')
             else:
                 await self._save_state_snapshot(state)
         else:
@@ -229,10 +250,16 @@ class Tracker:
         ts = datetime.datetime.now(tz=datetime.UTC)
         fn = f'game_state_{ts.strftime("%Y%m%dT%H%M%S%f")}.json'
         out_path = AsyncPath(self.cache_dir / fn)
+        contents = json.dumps(state)
+        sha2 = hashlib.sha256(contents.encode('utf-8')).hexdigest()
+        if sha2 == self.game_state.sha2:
+            logger.debug('No change in game state.')
+            return
+        self.game_state.sha2 = sha2
+        console.log('State updated', len(contents), 'bytes')
         async with out_path.open('w+') as f:
-            contents = json.dumps(state)
             await f.write(contents)
-            console.log(f'Wrote {len(contents):d} bytes to {out_path.name}')
+            logger.debug(f'Wrote {len(contents):d} bytes to {out_path.name}')
 
     async def handle_game_result(self, result):
         grai = next(ai for ai in result['GameResultAccountItems'] if ai['AccountId'] == self.account['Id'])

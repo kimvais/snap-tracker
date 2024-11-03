@@ -1,7 +1,9 @@
+import asyncio
 import codecs
 import json
 import logging
 import pathlib
+import subprocess
 from collections.abc import (
     Iterable,
 )
@@ -17,6 +19,9 @@ import stringcase
 from rich.highlighter import ReprHighlighter
 from rich.protocol import is_renderable
 from rich.table import Table
+
+from snap_tracker._console import console
+
 
 logger = logging.getLogger(__name__)
 
@@ -70,3 +75,10 @@ async def _read_file(fn: pathlib.Path) -> dict[str, object]:
         else:
             raise ValueError(contents[:10])
         return payload
+
+async def write_volume_caches(every: int = 5, driveletter: str = 'C'):
+    console.log('Setting up a task to write filesystem changes to disk every', every, 'seconds on', driveletter)
+    while True:
+        subprocess.check_call(f"pwsh -NoProfile -Command Write-VolumeCache {driveletter}")
+        logger.debug('Write-VolumeCache %s called, sleeping %d seconds', (driveletter, every))
+        await asyncio.sleep(every)
