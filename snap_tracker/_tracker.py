@@ -67,9 +67,9 @@ class Tracker:
         self.error_log = GameLogFileState.from_path(self.data_dir / 'ErrorLog.txt')
         self.player_log = GameLogFileState.from_path(self.data_dir / 'Player.log')
         self.cache_dir: Path = Path(platformdirs.user_cache_dir(APP_NAME, AUTHOR))
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.game_state = GameStateFile.from_path(self.state_dir / 'GameState.json')
 
-        os.makedirs(self.cache_dir, exist_ok=True)
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
             self.db = self._client.raw
@@ -146,7 +146,6 @@ class Tracker:
     async def parse_game_state(self):
         data = await self._read_state('Game')
         return data['RemoteGame']['GameState']
-        # _player, _opponent = game_state['Players']
 
     async def _periodic_volume_cache_write(self):
         drive = self.game_state.path.drive
@@ -209,7 +208,7 @@ class Tracker:
             game_id = uuid.UUID(hex=state.get('Id'))
         except TypeError:
             game_id = None
-        # console.log(':game_die: Read game state for ', game_id, 'turn', turn_in_state)
+        logger.debug('Read game state for %s turn %s', game_id, turn_in_state)
         for log_event in _parse_log_lines(new_log_lines):
             logger.debug(log_event)
             match log_event.type:
@@ -272,13 +271,15 @@ class Tracker:
         console.log('State updated', len(contents), 'bytes')
         async with out_path.open('w+') as f:
             await f.write(contents)
-            logger.debug(f'Wrote {len(contents):d} bytes to {out_path.name}')
+            logger.debug('Wrote %d bytes to %s', len(contents), out_path.name)
 
     async def handle_game_result(self, result):
         grai = next(ai for ai in result['GameResultAccountItems'] if ai['AccountId'] == self.account['Id'])
         is_winner = grai.get('IsWinner', False)
         is_loser = grai.get('IsLoser', False)
-        assert is_winner != is_loser
+        if is_winner == is_loser:
+            console.log('[bold][red]Error: cannot determine winner')
+            return
         cubes = grai.get('FinalCubeValue')
         cubestring = ':ice:' * cubes
         if is_winner:
