@@ -68,6 +68,11 @@ async def _read_file(fn):
 
 
 def _parse_log_lines(log_lines):
+    # XXX: Yield events
     for line in log_lines:
+        if line == 'LoadPrimaryScene|End|Game':
+            raise StopIteration
+        if line == 'LoadPrimaryScene|Start|Game':
+            ...
         if m := CARD_STAGING_RE.match(line):
             yield m.groupdict()

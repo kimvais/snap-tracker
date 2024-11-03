@@ -147,33 +147,40 @@ class Tracker:
     async def _process_changes(self):
         staged_turn = 0
         new_log_lines = await self._read_player_log()
-        for card_staging in _parse_log_lines(new_log_lines):
-            console.log(card_staging)
-            staged_turn = max((int(card_staging['turn']), staged_turn))
+        try:
+            for card_staging in _parse_log_lines(new_log_lines):
+                # console.log(card_staging)
+                staged_turn = max((int(card_staging['turn']), staged_turn))
+                self.ongoing_game.current_turn = staged_turn
+        except StopIteration:
+            console.log('New game!')
+            self.ongoing_game = Game()
         state = await self.parse_game_state()
         turn = state.get('Turn', 0)
         game_id = state.get('Id')
         console.log(':game_die: Read game state for ', game_id, 'turn', turn)
 
-        if result := state.get('ClientResultMessage'):
-            console.log(result)
-            await self.handle_game_result(result)
-
-        elif self.ongoing_game is None:
-            if turn == 0 and self.ongoing_game != game_id:
-                console.log('New game', game_id, 'begun!')
-                self.ongoing_game = Game.new(game_id)
+        if not turn and game_id:
+            console.log('New game', game_id, 'begun!')
+            self.ongoing_game = Game.new(game_id)
+        elif self.ongoing_game is not None and game_id:
+            if game_id != self.ongoing_game:
+                console.log('Mismatch', game_id, self.ongoing_game.id)
+            try:
+                game_current_turn = self.ongoing_game.current_turn
+            except AttributeError:
+                game_current_turn = 0
+            if result := state.get('ClientResultMessage'):
+                await self.handle_game_result(result)
+            elif staged_turn > game_current_turn:
+                 console.log('Stale state, not saving.')
             else:
-                return
-        else:
-            current_turn = max((self.ongoing_game.current_turn, turn, staged_turn))
-            console.log('Setting turn to', current_turn)
+                await self._save_state_snapshot(state)
             self.ongoing_game.current_turn = current_turn
-
-        if staged_turn > self.ongoing_game.current_turn:
-            console.log('Stale state, not saving.')
+            current_turn = max((game_current_turn, turn, staged_turn))
+            console.log('Setting turn to', current_turn)
         else:
-            await self._save_state_snapshot(state)
+            console.log("Waiting for game to start.", self.ongoing_game, game_id)
 
 
     async def _read_player_log(self):
@@ -195,7 +202,7 @@ class Tracker:
             console.log(f'Wrote {len(contents):d} bytes to {out_path.name}')
 
     async def handle_game_result(self, result):
-        grai = result['GameResultAccountItems']
+        grai = next(ai for ai in result['GameResultAccountItems'] if ai['AccountId'] == self.account['Id'])
         is_winner = grai.get('IsWinner', False)
         is_loser = grai.get('IsLoser', False)
         assert is_winner != is_loser

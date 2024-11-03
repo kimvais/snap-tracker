@@ -46,7 +46,7 @@ class Game:
 
     @classmethod
     def new(cls, game_id: str):
-        cls(id=uuid.UUID(hex=game_id))
+        return cls(id=uuid.UUID(hex=game_id))
 
     def __eq__(self, __value):
         other = uuid.UUID(hex=__value)
