@@ -30,7 +30,7 @@ from snap_tracker.helpers import (
     rich_table,
     write_volume_caches,
 )
-from snap_tracker.types import (
+from snap_tracker.data_types import (
     Game,
 )
 

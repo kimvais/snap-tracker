@@ -4,7 +4,7 @@ from collections import Counter
 
 import stringcase
 
-from snap_tracker.types import (
+from snap_tracker.data_types import (
     PRICES,
     Card,
     CardVariant,

@@ -1,7 +1,7 @@
 import unittest
 import uuid
 
-from snap_tracker.types import Game
+from snap_tracker.data_types import Game
 
 
 class TypesTest(unittest.TestCase):

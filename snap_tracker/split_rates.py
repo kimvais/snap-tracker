@@ -43,7 +43,7 @@
         21.6% chance for Stardust
         35% chance for Krackle
 """
-from .types import (
+from snap_tracker.data_types import (
     Finish,
     Flare,
     SplitRate,

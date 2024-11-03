@@ -6,7 +6,7 @@ from snap_tracker._game_log import (
     _parse_line,
     _parse_log_lines,
 )
-from snap_tracker.types import GameMode
+from snap_tracker.data_types import GameMode
 
 
 class GameLogTest(unittest.TestCase):

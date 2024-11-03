@@ -79,6 +79,6 @@ async def _read_file(fn: pathlib.Path) -> dict[str, object]:
 async def write_volume_caches(every: int = 5, driveletter: str = 'C'):
     console.log('Setting up a task to write filesystem changes to disk every', every, 'seconds on', driveletter)
     while True:
-        subprocess.check_call(f"pwsh -NoProfile -Command Write-VolumeCache {driveletter}")
+        await asyncio.subprocess.create_subprocess_shell(f"pwsh -NoProfile -Command Write-VolumeCache {driveletter}")
         logger.debug('Write-VolumeCache %s called, sleeping %d seconds', (driveletter, every))
         await asyncio.sleep(every)

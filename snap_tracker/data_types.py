@@ -22,7 +22,7 @@ def _calculate_prices():
         (Rarity.ULTRA, 1025, 105),
         (Rarity.INFINITY, 1525, 155),
     )
-    Ranks = Enum('Rank', [(c[0].value, i) for i, c in enumerate(reversed(_total_costs), 1)])
+    ranks = Enum('Rank', [(c[0].value, i) for i, c in enumerate(reversed(_total_costs), 1)])
     upgrades = itertools.combinations(_total_costs, 2)
     for pair in upgrades:
         lower = min(pair, key=operator.itemgetter(1))
@@ -36,7 +36,7 @@ def _calculate_prices():
             to,
             credit_cost,
             booster_cost,
-            Ranks[to].value,
+            ranks[to].value,
         )
 
 
