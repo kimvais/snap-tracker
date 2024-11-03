@@ -3,7 +3,7 @@ import codecs
 import json
 import logging
 import pathlib
-import subprocess
+import shutil
 from collections.abc import (
     Iterable,
 )
@@ -78,7 +78,27 @@ async def _read_file(fn: pathlib.Path) -> dict[str, object]:
 
 async def write_volume_caches(every: int = 5, driveletter: str = 'C'):
     console.log('Setting up a task to write filesystem changes to disk every', every, 'seconds on', driveletter)
-    while True:
-        await asyncio.subprocess.create_subprocess_shell(f"pwsh -NoProfile -Command Write-VolumeCache {driveletter}")
-        logger.debug('Write-VolumeCache %s called, sleeping %d seconds', (driveletter, every))
-        await asyncio.sleep(every)
+    powershell = shutil.which('pwsh.exe')
+    command = f'Start-Job -ScriptBlock {{Write-VolumeCache {driveletter}}}'
+    process = None
+    try:
+        while True:
+            process = await asyncio.subprocess.create_subprocess_exec(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                executable=powershell,
+            )
+            await process.communicate()
+            logger.debug('Write-VolumeCache %s called, sleeping %d seconds', (driveletter, every))
+            await asyncio.sleep(every)
+    except asyncio.CancelledError:
+        console.log('Shutting down periodic Write-VolumeCache.')
+        try:
+            process.terminate()
+            await process.wait()
+        except AttributeError:
+            pass
+    finally:
+        console.log("Periodic Write-VolumeCache shut down.")
+        await asyncio.sleep(0)

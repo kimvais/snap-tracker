@@ -22,6 +22,9 @@ from snap_tracker._game_log import (
     _read_log,
 )
 from snap_tracker.collection import Collection
+from snap_tracker.data_types import (
+    Game,
+)
 from snap_tracker.debug import _replace_dollars_with_underscores_in_keys
 from snap_tracker.helpers import (
     _read_file,
@@ -29,9 +32,6 @@ from snap_tracker.helpers import (
     ensure_collection,
     rich_table,
     write_volume_caches,
-)
-from snap_tracker.data_types import (
-    Game,
 )
 
 APP_NAME = 'snap-tracker'
@@ -103,12 +103,27 @@ class Tracker:
         console.print(table)
 
     @ensure_collection
-    async def run(self):
-        self._setup_task_for_ensuring_disk_writes()
+    async def _arun(self):
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(self._periodic_volume_cache_write())
+            tg.create_task(self._watch())
+
+    def run(self):
+        try:
+            asyncio.run(self._arun())
+        except KeyboardInterrupt:
+            console.log('Shutting down.')
+
+    async def _watch(self):
         console.log('Watching for file changes')
-        async for changes in awatch(self.player_log.path, self.error_log.path, force_polling=True):
-            for change in changes:
-                await self._process_change(change)
+        try:
+            async for changes in awatch(self.player_log.path, self.error_log.path, force_polling=True):
+                for change in changes:
+                    await self._process_change(change)
+        except asyncio.CancelledError:
+            console.log("Shutting down file watcher.")
+        finally:
+            await asyncio.sleep(0)
 
     @ensure_collection
     async def sync(self):
@@ -133,11 +148,10 @@ class Tracker:
         return data['RemoteGame']['GameState']
         # _player, _opponent = game_state['Players']
 
-    def _setup_task_for_ensuring_disk_writes(self):
-        loop = asyncio.get_running_loop()
+    async def _periodic_volume_cache_write(self):
         drive = self.game_state.path.drive
         driveletter = drive[0]
-        asyncio.ensure_future(write_volume_caches(FILESYSTEM_SYNC_INTERVAL, driveletter), loop=loop)
+        await write_volume_caches(FILESYSTEM_SYNC_INTERVAL, driveletter)
 
     @ensure_collection
     async def upgrades(self):
