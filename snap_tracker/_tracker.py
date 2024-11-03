@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -11,10 +12,15 @@ from aiopath import AsyncPath
 from rich.console import Console
 from watchfiles import awatch
 
+from snap_tracker._game_log import (
+    GameLogEvent,
+    GameLogFileState,
+    _parse_log_lines,
+    _read_log,
+)
 from snap_tracker.collection import Collection
 from snap_tracker.debug import _replace_dollars_with_underscores_in_keys
 from snap_tracker.helpers import (
-    _parse_log_lines,
     _read_file,
     ensure_account,
     ensure_collection,
@@ -22,8 +28,6 @@ from snap_tracker.helpers import (
 )
 from snap_tracker.types import (
     Game,
-    GameLogFileState,
-    PlayerLogEvent,
 )
 
 APP_NAME = 'snap-tracker'
@@ -31,16 +35,6 @@ AUTHOR = 'kimvais'
 GAME_DATA_DIRECTORY = r'%LOCALAPPDATA%low\Second Dinner\SNAP'
 logger = logging.getLogger(__name__)
 console = Console(color_system="truecolor")
-
-
-async def _read_log(log_state):
-    with log_state.path.open() as f:
-        f.seek(log_state.pos)
-        lines = f.readlines()
-        new_pos = f.tell()
-        console.log(f'Read {new_pos - log_state.pos:d} bytes, {len(lines)} lines of Player.log')
-        log_state.pos = new_pos
-    return lines
 
 
 class Tracker:
@@ -170,20 +164,27 @@ class Tracker:
             case _:
                 console.log('Unknown file change tracked:', changed_path)
         state = await self.parse_game_state()
+        if (result := state.get('ClientResultMessage')) and self.ongoing_game:
+            await self.handle_game_result(result)
+            return
         turn_in_state = state.get('Turn', 0)
         game_id = state.get('Id')
         console.log(':game_die: Read game state for ', game_id, 'turn', turn_in_state)
         for log_event in _parse_log_lines(new_log_lines):
             console.log(log_event)
             match log_event.type:
-                case PlayerLogEvent.Type.GAME_START:
-                    console.log('New game, waiting for game id')
-                    self.ongoing_game = None
-                    break
-                case PlayerLogEvent.Type.GAME_END:
-                    if result := state.get('ClientResultMessage'):
-                        await self.handle_game_result(result)
-                case PlayerLogEvent.Type.CARD_STAGED:
+                case GameLogEvent.Type.GAME_START:
+                    game_id = uuid.UUID(hex=log_event.data['game_id'])
+                    self.ongoing_game = Game(game_id)
+                    console.log('Matchmaking found us a game', game_id)
+                    continue
+                case GameLogEvent.Type.TURN_END:
+                    self.ongoing_game.turn = log_event.data['turn']
+                    continue
+                case GameLogEvent.Type.GAME_END:
+                    console.log('Got game results, but state is not updated :slightly_frowning_face:')
+                    continue
+                case GameLogEvent.Type.CARD_STAGED:
                     staged_turn = max((int(log_event.data['turn']), staged_turn))
                     if turn_in_state < staged_turn:
                         console.log('Setting turn to', staged_turn)
@@ -191,6 +192,11 @@ class Tracker:
 
         if game_id != self.ongoing_game:
             console.log('Mismatch', game_id, self.ongoing_game)
+            return
+
+        if not game_id and not turn_in_state and self.ongoing_game is None:
+            # Waiting for matchmaking
+            return
 
         if not turn_in_state and game_id:
             console.log('Got game_id', game_id, 'starting.')

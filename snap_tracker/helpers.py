@@ -2,9 +2,7 @@ import codecs
 import json
 import logging
 import pathlib
-import re
 from collections.abc import (
-    Generator,
     Iterable,
 )
 from functools import wraps
@@ -19,10 +17,6 @@ import stringcase
 from rich.highlighter import ReprHighlighter
 from rich.protocol import is_renderable
 from rich.table import Table
-
-from snap_tracker.types import PlayerLogEvent
-
-CARD_STAGING_RE = re.compile(r'StageCard\|CardDefId=(?P<card_def_if>[A-Za-z0-9]+)\|CardEntityId=(?P<card_eid>\d+)\|ZoneEntityId=(?P<zone_eid>\d+)\|Turn=(?P<turn>\d)')
 
 logger = logging.getLogger(__name__)
 
@@ -77,11 +71,3 @@ async def _read_file(fn: pathlib.Path) -> dict[str, object]:
         return payload
 
 
-def _parse_log_lines(log_lines: Iterable[str]) -> Generator[PlayerLogEvent, None, None]:
-    for line in log_lines:
-        if line == 'LoadPrimaryScene|End|Game':
-            yield PlayerLogEvent(PlayerLogEvent.Type.GAME_END)
-        if line == 'LoadPrimaryScene|Start|Game':
-            yield PlayerLogEvent(PlayerLogEvent.Type.GAME_START)
-        if m := CARD_STAGING_RE.match(line):
-            yield PlayerLogEvent(PlayerLogEvent.Type.CARD_STAGED, m.groupdict())
