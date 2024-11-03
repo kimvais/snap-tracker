@@ -1,5 +1,6 @@
 import enum
 import itertools
+import pathlib
 import uuid
 from dataclasses import (
     dataclass,
@@ -7,6 +8,8 @@ from dataclasses import (
 )
 from enum import Enum
 from functools import cached_property
+from idlelib.pathbrowser import PathBrowser
+from typing import Any
 
 import stringcase
 
@@ -37,6 +40,27 @@ def _calculate_prices():
             booster_cost,
             Ranks[to].value,
         )
+
+
+@dataclass
+class GameLogFileState:
+    path: pathlib.Path
+    pos: int
+
+    @classmethod
+    def from_path(cls, path: pathlib.Path):
+        return cls(path=path, pos=path.stat().st_size)
+
+
+@dataclass
+class PlayerLogEvent:
+    class Type(enum.Enum):
+        GAME_START = enum.auto()
+        GAME_END = enum.auto()
+        CARD_STAGED = enum.auto()
+
+    type: Type
+    data: dict[str, Any] | None = None
 
 
 @dataclass
