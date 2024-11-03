@@ -5,7 +5,7 @@ from snap_tracker.split_rates import get_split_rate
 
 class TestSplitRates(unittest.TestCase):
     def test_infinity_splits(self):
-        with self.subTest(f"Split #0"):
+        with self.subTest("Split #0"):
             rates = get_split_rate(0)
             self.assertEqual(sum(rates.finish.values()), 1)
             self.assertEqual(sum(rates.flare.values()), 0)

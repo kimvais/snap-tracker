@@ -3,17 +3,17 @@ from collections import Counter
 
 import stringcase
 
-from snap_tracker.helpers import rich_table
 from snap_tracker.types import (
+    PRICES,
     Card,
     CardVariant,
     Finish,
     Flare,
-    PRICES,
     Rarity,
 )
 
 logger = logging.getLogger(__name__)
+
 
 class Collection(dict):
     def __init__(self, account, server_state):
@@ -64,7 +64,7 @@ class Collection(dict):
         potential_cards = sorted(
             (c for c in self.values() if c.boosters >= 5 and c.number_of_common_variants),
             key=sort_by,
-            reverse=True
+            reverse=True,
         )
         collection_level = 0
         upgrades = []
@@ -77,11 +77,10 @@ class Collection(dict):
                 'x': n,
                 'card': card.name,
                 'credits_': f'{credits_} (-{credit_cost})',
-                'boosters': f'{card.boosters} (-{upgrades * 5})'
+                'boosters': f'{card.boosters} (-{upgrades * 5})',
             })
             collection_level += n
         return upgrades
-
 
     def _maximize_splits(self, credits_):
         def _sort_fn(c):
@@ -114,4 +113,3 @@ class Collection(dict):
                     card.boosters -= price.boosters
                     # TODO: Update variant to new quality
         return upgrades
-

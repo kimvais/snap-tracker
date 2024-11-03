@@ -81,7 +81,7 @@ class Tracker:
                     'card': card.name,
                     'variants': len(card.variants),
                     'splits': card.splits,
-                }
+                },
             )
         table = rich_table(data, title='your best performing cards')
         console.print(table)
@@ -152,6 +152,14 @@ class Tracker:
         except ValueError:
             return '[red]No ccommon cards to upgrade.'
 
+    def _update_current_turn(self, turn, game_id):
+        console.log('Setting turn to', turn)
+        if self.ongoing_game is None:
+            # Tracked was started mid-game
+            self.ongoing_game = Game.new(game_id, current_turn=(turn))
+        else:
+            self.ongoing_game.current_turn = turn
+
     async def _process_change(self, change):
         change_type, changed_file = change
         changed_path = Path(changed_file)
@@ -168,8 +176,11 @@ class Tracker:
             await self.handle_game_result(result)
             return
         turn_in_state = state.get('Turn', 0)
-        game_id = state.get('Id')
-        console.log(':game_die: Read game state for ', game_id, 'turn', turn_in_state)
+        try:
+            game_id = uuid.UUID(hex=state.get('Id'))
+        except TypeError:
+            game_id = None
+        # console.log(':game_die: Read game state for ', game_id, 'turn', turn_in_state)
         for log_event in _parse_log_lines(new_log_lines):
             console.log(log_event)
             match log_event.type:
@@ -179,26 +190,26 @@ class Tracker:
                     console.log('Matchmaking found us a game', game_id)
                     continue
                 case GameLogEvent.Type.TURN_END:
-                    self.ongoing_game.turn = log_event.data['turn']
+                    self._update_current_turn(int(log_event.data['turn']), game_id)
                     continue
                 case GameLogEvent.Type.GAME_END:
                     console.log('Got game results, but state is not updated :slightly_frowning_face:')
                 case GameLogEvent.Type.CARD_STAGED:
                     staged_turn = max((int(log_event.data['turn']), staged_turn))
                     if turn_in_state < staged_turn:
-                        console.log('Setting turn to', staged_turn)
-                        self.ongoing_game.current_turn = staged_turn
+                        self._update_current_turn(staged_turn, game_id)
 
         if not self.ongoing_game:
             # Old state file, waiting for new game.
             return
-        if game_id != self.ongoing_game:
-            console.log('Mismatch', game_id, self.ongoing_game)
+        # TODO: This is dangerous, if we compared the other way round without the `.id` they wouldn't match.
+        if self.ongoing_game.id != game_id:
+            console.log('Game id mismatch', {'state': game_id, 'tracker': self.ongoing_game})
             return
 
         if not turn_in_state and game_id:
             console.log('Got game_id', game_id, 'starting.')
-            self.ongoing_game = Game.new(game_id)
+            self.ongoing_game = Game(game_id)
         elif self.ongoing_game is not None and game_id:
             if turn_in_state < self.ongoing_game.current_turn:
                 console.log('Stale state, not saving.')
@@ -210,8 +221,8 @@ class Tracker:
                 {
                     'turn_in_state': turn_in_state,
                     'game_id': game_id,
-                    'ongoing_game': self.ongoing_game
-                }
+                    'ongoing_game': self.ongoing_game,
+                },
                 )
 
     async def _save_state_snapshot(self, state):

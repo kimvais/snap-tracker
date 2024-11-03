@@ -27,7 +27,7 @@ def hl(obj):
     return _hl(str(obj))
 
 
-def rich_table(data: list[dict[str, Any]], title: str=None):
+def rich_table(data: list[dict[str, Any]], title: str = None):
     if not data:
         raise ValueError
     columns = data[0].keys()
@@ -59,6 +59,7 @@ def ensure_account(func: Callable[[Any, Any], Awaitable[Any]]) -> Callable[[Any,
 
     return wrapper
 
+
 async def _read_file(fn: pathlib.Path) -> dict[str, object]:
     logger.debug("loading %s", fn.stem)
     async with aiofiles.open(fn, 'rb') as f:
@@ -69,5 +70,3 @@ async def _read_file(fn: pathlib.Path) -> dict[str, object]:
         else:
             raise ValueError(contents[:10])
         return payload
-
-

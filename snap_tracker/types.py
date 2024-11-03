@@ -50,13 +50,17 @@ class Game:
     mode: GameMode = GameMode.RANKED
 
     @classmethod
-    def new(cls, game_id: str):
-        return cls(id=uuid.UUID(hex=game_id))
+    def new(cls, game_id: str, **kwargs):
+        return cls(id=uuid.UUID(hex=game_id), **kwargs)
 
     def __eq__(self, other):
-        if not isinstance(other, uuid.UUID):
-            other = uuid.UUID(hex=other)
-        return self.id == other
+        if isinstance(other, Game):
+            return self.id == other.id
+        if isinstance(other, uuid.UUID):
+            return self.id == Game(other).id
+        if isinstance(other, str):
+            return self.id == Game(uuid.UUID(hex=other)).id
+        raise NotImplementedError
 
 
 class Rarity(str, Enum):
@@ -183,4 +187,3 @@ class Card:
 class SplitRate:
     finish: dict[Finish, float]
     flare: dict[Flare.Effect, float]
-
