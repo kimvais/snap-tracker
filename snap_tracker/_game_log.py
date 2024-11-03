@@ -9,6 +9,8 @@ from typing import (
     Iterable,
 )
 
+import aiopath
+
 CARD_STAGING_RE = re.compile(
     r'StageCard\|CardDefId=(?P<card_def_id>\w+)\|CardEntityId=(?P<card_eid>\d+)\|ZoneEntityId=(?P<zone_eid>\d+)\|Turn=(?P<turn>\d)',
 )
@@ -46,10 +48,10 @@ class GameLogFileState:
 
 
 async def _read_log(log_state):
-    with log_state.path.open() as f:
-        f.seek(log_state.pos)
-        lines = f.readlines()
-        new_pos = f.tell()
+    async with aiopath.Path(log_state.path).open(mode='r') as f:
+        await f.seek(log_state.pos)
+        lines = await f.readlines()
+        new_pos = await f.tell()
         logger.debug(f'Read {new_pos - log_state.pos:d} bytes, {len(lines)} lines of {log_state.path.name}')
         log_state.pos = new_pos
     return lines
