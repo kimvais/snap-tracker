@@ -83,15 +83,7 @@ class Tracker:
         except KeyError:
             logger.exception("No MONGODB_URI set, syncing will not work.")
 
-    async def _load_profile(self):
-        self._profile = (await self._read_state('Profile'))['ServerState']
-
-    @property
-    def account(self):
-        try:
-            return self._profile['Account']
-        except TypeError:
-            logger.exception("Tracker._load_profile() hasn't been awaited!")
+    # Commands
 
     @ensure_collection
     async def card_stats(self):
@@ -109,28 +101,18 @@ class Tracker:
         table = rich_table(data, title='your best performing cards')
         console.print(table)
 
-    @ensure_collection
-    async def _arun(self):
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(self._periodic_volume_cache_write())
-            tg.create_task(self._watch())
-
     def run(self):
         try:
             asyncio.run(self._arun())
         except KeyboardInterrupt:
             console.log('Shutting down.')
 
-    async def _watch(self):
-        console.log('Watching for file changes')
+    @property
+    def account(self):
         try:
-            async for changes in awatch(self.player_log.path, self.error_log.path, force_polling=True):
-                for change in changes:
-                    await self._process_change(change)
-        except asyncio.CancelledError:
-            console.log("Shutting down file watcher.")
-        finally:
-            await asyncio.sleep(0)
+            return self._profile['Account']
+        except TypeError:
+            logger.exception("Tracker._load_profile() hasn't been awaited!")
 
     @ensure_collection
     async def sync(self):
@@ -146,6 +128,39 @@ class Tracker:
             result = await self.db.game_files.update_one(query, update, upsert=True)
             logger.info(result)
 
+    @ensure_collection
+    async def upgrades(self):
+        credits_ = self._profile['Wallet']['_creditsCurrency'].get('TotalAmount', 0)
+        console.print(f'Hi {self.account["Name"]}!')
+        console.print(f'You have {credits_} credits_ available for upgrades.')
+        console.rule()
+
+        console.print(self._find_commons(credits_))
+        console.print(self._find_splits(credits_))
+
+    # Internals
+
+    async def _load_profile(self):
+        self._profile = (await self._read_state('Profile'))['ServerState']
+
+    @ensure_collection
+    async def _arun(self):
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(self._periodic_volume_cache_write())
+            tg.create_task(self._watch())
+
+    async def _watch(self):
+        paths = (self.player_log.path, self.error_log.path, self.game_state.path)
+        console.log('Watching for file changes in', paths)
+        try:
+            async for changes in awatch(*paths):
+                for change in changes:
+                    await self._process_change(change)
+        except asyncio.CancelledError:
+            console.log("Shutting down file watcher.")
+        finally:
+            await asyncio.sleep(0)
+
     async def _read_state(self, name):
         file_name = self.state_dir / f'{name}State.json'
         return await _read_file(file_name)
@@ -158,16 +173,6 @@ class Tracker:
         drive = self.game_state.path.drive
         driveletter = drive[0]
         await write_volume_caches(FILESYSTEM_SYNC_INTERVAL, driveletter)
-
-    @ensure_collection
-    async def upgrades(self):
-        credits_ = self._profile['Wallet']['_creditsCurrency'].get('TotalAmount', 0)
-        console.print(f'Hi {self.account["Name"]}!')
-        console.print(f'You have {credits_} credits_ available for upgrades.')
-        console.rule()
-
-        console.print(self._find_commons(credits_))
-        console.print(self._find_splits(credits_))
 
     @ensure_account
     async def _load_collection(self):
@@ -210,7 +215,8 @@ class Tracker:
             case 'GameState':
                 state = await self.parse_game_state()
                 if (result := state.get('ClientResultMessage')) and self.ongoing_game:
-                    await self.handle_game_result(result)
+                    file_name = await self.handle_game_result(result)
+                    await self._save_state_snapshot(state, file_name)
                     return
                 turn_in_state = state.get('Turn', 0)
                 game_id = get_game_id(state)
@@ -218,14 +224,14 @@ class Tracker:
                 if not self.ongoing_game:
                     # Old state file, waiting for new game.
                     return
-                    # TODO: This is dangerous, if we compared the other way round without the `.id` they wouldn't match.
+                # TODO: This is dangerous, if we compared the other way round without the .id they wouldn't match.
                 if self.ongoing_game.id != game_id:
                     console.log(
                         'Game id mismatch',
                         {
                             'state': game_id,
-                            'tracker': self.ongoing_game
-                        }
+                            'tracker': self.ongoing_game,
+                        },
                         )
                     return
 
@@ -272,9 +278,9 @@ class Tracker:
                     if turn_in_state < staged_turn:
                         self._update_current_turn(staged_turn, game_id)
 
-    async def _save_state_snapshot(self, state):
+    async def _save_state_snapshot(self, state, file_name: str | None = None):
         ts = datetime.datetime.now(tz=datetime.UTC)
-        fn = f'game_state_{ts.strftime("%Y%m%dT%H%M%S%f")}.json'
+        fn = file_name if file_name is not None else f'game_state_{ts.strftime("%Y%m%dT%H%M%S%f")}.json'
         out_path = AsyncPath(self.cache_dir / fn)
         contents = json.dumps(state)
         sha2 = hashlib.sha256(contents.encode('utf-8')).hexdigest()
@@ -293,11 +299,13 @@ class Tracker:
         is_loser = grai.get('IsLoser', False)
         if is_winner == is_loser:
             console.log('[bold][red]Error: cannot determine winner')
-            return
+            return None
         cubes = grai.get('FinalCubeValue')
         cubestring = ':ice:' * cubes
+        game_id = self.ongoing_game.id
+        self.ongoing_game = None
         if is_winner:
             console.log(f':trophy: You won {cubestring}!')
-        else:
-            console.print(f':slightly_frowning_face: You lost {cubestring}')
-        self.ongoing_game = None
+            return f'win-{game_id!s}.json'
+        console.print(f':slightly_frowning_face: You lost {cubestring}')
+        return f'loss-{game_id!s}.json'
