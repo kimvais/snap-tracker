@@ -70,7 +70,7 @@ async def _read_log(log_state):
         logger.debug(
             'Read %d lines (%d bytes) from %s',
             len(lines),
-            new_pos - log_state.poslen(lines),
+            new_pos - log_state.pos,
             log_state.path.name,
         )
         log_state.pos = new_pos
