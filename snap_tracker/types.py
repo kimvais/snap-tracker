@@ -53,8 +53,9 @@ class Game:
     def new(cls, game_id: str):
         return cls(id=uuid.UUID(hex=game_id))
 
-    def __eq__(self, __value):
-        other = uuid.UUID(hex=__value)
+    def __eq__(self, other):
+        if not isinstance(other, uuid.UUID):
+            other = uuid.UUID(hex=other)
         return self.id == other
 
 

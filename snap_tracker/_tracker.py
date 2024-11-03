@@ -183,19 +183,17 @@ class Tracker:
                     continue
                 case GameLogEvent.Type.GAME_END:
                     console.log('Got game results, but state is not updated :slightly_frowning_face:')
-                    continue
                 case GameLogEvent.Type.CARD_STAGED:
                     staged_turn = max((int(log_event.data['turn']), staged_turn))
                     if turn_in_state < staged_turn:
                         console.log('Setting turn to', staged_turn)
                         self.ongoing_game.current_turn = staged_turn
 
+        if not self.ongoing_game:
+            # Old state file, waiting for new game.
+            return
         if game_id != self.ongoing_game:
             console.log('Mismatch', game_id, self.ongoing_game)
-            return
-
-        if not game_id and not turn_in_state and self.ongoing_game is None:
-            # Waiting for matchmaking
             return
 
         if not turn_in_state and game_id:

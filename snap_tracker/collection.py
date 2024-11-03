@@ -71,7 +71,7 @@ class Collection(dict):
         while credits_ and potential_cards:
             card = potential_cards.pop(0)
             n = int(min((credits_ / 25, card.number_of_common_variants, card.boosters / 5)))
-            credit_cost = upgrades * 25
+            credit_cost = n * 25
             credits_ -= credit_cost
             upgrades.append({
                 'x': n,
@@ -79,7 +79,7 @@ class Collection(dict):
                 'credits_': f'{credits_} (-{credit_cost})',
                 'boosters': f'{card.boosters} (-{upgrades * 5})'
             })
-            collection_level += upgrades
+            collection_level += n
         return upgrades
 
 
