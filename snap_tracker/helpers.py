@@ -22,7 +22,6 @@ from rich.table import Table
 
 from snap_tracker._console import console
 
-
 logger = logging.getLogger(__name__)
 
 _hl = ReprHighlighter()
@@ -32,7 +31,7 @@ def hl(obj):
     return _hl(str(obj))
 
 
-def rich_table(data: list[dict[str, Any]], title: str = None):
+def rich_table(data: list[dict[str, Any]], title: str | None = None):
     if not data:
         raise ValueError
     columns = data[0].keys()
@@ -75,6 +74,7 @@ async def _read_file(fn: pathlib.Path) -> dict[str, object]:
         else:
             raise ValueError(contents[:10])
         return payload
+
 
 async def write_volume_caches(every: int = 5, driveletter: str = 'C'):
     console.log('Setting up a task to write filesystem changes to disk every', every, 'seconds on', driveletter)

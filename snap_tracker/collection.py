@@ -1,4 +1,5 @@
 import logging
+import operator
 from collections import Counter
 
 import stringcase
@@ -50,7 +51,7 @@ class Collection(dict):
 
     def _get_card_stats(self):
         counter = Counter({k: v for k, v in self._account['CardStats'].items() if isinstance(v, int)})
-        return sorted(counter.items(), key=lambda t: t[1], reverse=True)
+        return sorted(counter.items(), key=operator.itemgetter(1), reverse=True)
 
     def _maximize_level(self, credits_):
         def sort_by(c):

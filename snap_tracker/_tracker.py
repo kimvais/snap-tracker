@@ -74,7 +74,7 @@ class Tracker:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
             self.db = self._client.raw
         except KeyError:
-            logger.error("No MONGODB_URI set, syncing will not work.")
+            logger.exception("No MONGODB_URI set, syncing will not work.")
 
     async def _load_profile(self):
         self._profile = (await self._read_state('Profile'))['ServerState']
@@ -130,9 +130,8 @@ class Tracker:
 
     async def parse_game_state(self):
         data = await self._read_state('Game')
-        game_state = data['RemoteGame']['GameState']
+        return data['RemoteGame']['GameState']
         # _player, _opponent = game_state['Players']
-        return game_state
 
     def _setup_task_for_ensuring_disk_writes(self):
         loop = asyncio.get_running_loop()
@@ -177,7 +176,7 @@ class Tracker:
             self.ongoing_game.current_turn = turn
 
     async def _process_change(self, change):
-        change_type, changed_file = change
+        _change_type, changed_file = change
         changed_path = Path(changed_file)
         staged_turn = 0
         match changed_path.stem:

@@ -1,5 +1,6 @@
 import enum
 import itertools
+import operator
 import uuid
 from dataclasses import (
     dataclass,
@@ -24,8 +25,8 @@ def _calculate_prices():
     Ranks = Enum('Rank', [(c[0].value, i) for i, c in enumerate(reversed(_total_costs), 1)])
     upgrades = itertools.combinations(_total_costs, 2)
     for pair in upgrades:
-        lower = min(pair, key=lambda p: p[1])
-        upper = max(pair, key=lambda p: p[1])
+        lower = min(pair, key=operator.itemgetter(1))
+        upper = max(pair, key=operator.itemgetter(1))
         from_ = lower[0]
         to = upper[0]
         credit_cost = upper[1] - lower[1]
