@@ -49,6 +49,7 @@ class Game:
     id: uuid.UUID = None
     current_turn: int = 0
     mode: GameMode = GameMode.RANKED
+    opponent: dict | None = None
 
     @classmethod
     def new(cls, game_id: str, **kwargs):

@@ -76,6 +76,7 @@ class Tracker:
         self.cache_dir: Path = Path(platformdirs.user_cache_dir(APP_NAME, AUTHOR))
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.game_state = GameStateFile.from_path(self.state_dir / 'GameState.json')
+        self.play_state_path = self.state_dir / 'PlayState.json'
 
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
@@ -107,13 +108,6 @@ class Tracker:
         except KeyboardInterrupt:
             console.log('Shutting down.')
 
-    @property
-    def account(self):
-        try:
-            return self._profile['Account']
-        except TypeError:
-            logger.exception("Tracker._load_profile() hasn't been awaited!")
-
     @ensure_collection
     async def sync(self):
         logging.info('Using game data directory %s', self.state_dir)
@@ -143,6 +137,13 @@ class Tracker:
     async def _load_profile(self):
         self._profile = (await self._read_state('Profile'))['ServerState']
 
+    @property
+    def account(self):
+        try:
+            return self._profile['Account']
+        except TypeError:
+            logger.exception("Tracker._load_profile() hasn't been awaited!")
+
     @ensure_collection
     async def _arun(self):
         async with asyncio.TaskGroup() as tg:
@@ -150,10 +151,10 @@ class Tracker:
             tg.create_task(self._watch())
 
     async def _watch(self):
-        paths = (self.player_log.path, self.error_log.path, self.game_state.path)
+        paths = (self.player_log.path, self.error_log.path, self.game_state.path, self.play_state_path)
         console.log('Watching for file changes in', paths)
         try:
-            async for changes in awatch(*paths):
+            async for changes in awatch(*paths, force_polling=True):
                 for change in changes:
                     await self._process_change(change)
         except asyncio.CancelledError:
@@ -205,57 +206,85 @@ class Tracker:
         changed_path = Path(changed_file)
         match changed_path.stem:
             case 'Player':
-                state = await self.parse_game_state()
                 new_log_lines = await _read_log(self.player_log)
-                await self._handle_log(new_log_lines, state)
+                await self._handle_log(new_log_lines)
             case 'ErrorLog':
-                state = await self.parse_game_state()
                 new_log_lines = await _read_log(self.error_log)
-                await self._handle_log(new_log_lines, state)
+                await self._handle_log(new_log_lines)
             case 'GameState':
-                state = await self.parse_game_state()
-                if (result := state.get('ClientResultMessage')) and self.ongoing_game:
-                    file_name = await self.handle_game_result(result)
-                    await self._save_state_snapshot(state, file_name)
-                    return
-                turn_in_state = state.get('Turn', 0)
-                game_id = get_game_id(state)
-
-                if not self.ongoing_game:
-                    # Old state file, waiting for new game.
-                    return
-                # TODO: This is dangerous, if we compared the other way round without the .id they wouldn't match.
-                if self.ongoing_game.id != game_id:
-                    console.log(
-                        'Game id mismatch',
-                        {
-                            'state': game_id,
-                            'tracker': self.ongoing_game,
-                        },
-                        )
-                    return
-
-                if not turn_in_state and self.ongoing_game is None and game_id:
-                    console.log('Got game_id', game_id, 'starting.')
-                    self.ongoing_game = Game(game_id)
-                elif self.ongoing_game is not None and game_id:
-                    if turn_in_state < self.ongoing_game.current_turn:
-                        logger.debug('Stale state, not saving.')
-                    else:
-                        await self._save_state_snapshot(state)
-                else:
-                    console.log(
-                        'Error: ',
-                        {
-                            'turn_in_state': turn_in_state,
-                            'game_id': game_id,
-                            'ongoing_game': self.ongoing_game,
-                        },
-                    )
+                await self._handle_game_state_change()
+            case 'PlayState':
+                play_state = await self._read_state('Play')
+                console.log(play_state)
             case _:
                 console.log('Unknown file change tracked:', changed_path)
 
-    async def _handle_log(self, new_log_lines, state):
+    async def _handle_game_state_change(self):
+        state = await self.parse_game_state()
+        cgi = state.get('ClientGameInfo')
+        if cgi is not None:
+            console.log('ClientGameInfo:', cgi)
+        await self._handle_player_info(state)
+        if (result := state.get('ClientResultMessage')) and self.ongoing_game:
+            file_name = await self.handle_game_result(result)
+            await self._save_state_snapshot(state, file_name)
+            self.ongoing_game = None
+            return
+        await self._handle_locations(state)
+        turn_in_state = state.get('Turn', 0)
+        game_id = get_game_id(state)
+        if not self.ongoing_game:
+            # Old state file, waiting for new game.
+            return
+        # TODO: This is dangerous, if we compared the other way round without the .id they wouldn't match.
+        if self.ongoing_game.id != game_id:
+            console.log(
+                'Game id mismatch',
+                {
+                    'state': game_id,
+                    'tracker': self.ongoing_game,
+                },
+            )
+            return
+        if not turn_in_state and self.ongoing_game is None and game_id:
+            console.log('Got game_id', game_id, 'starting.')
+            self.ongoing_game = Game(game_id)
+        elif self.ongoing_game is not None and game_id:
+            if turn_in_state < self.ongoing_game.current_turn:
+                logger.debug('Stale state, not saving.')
+            else:
+                await self._save_state_snapshot(state)
+        else:
+            console.log(
+                'Error: ',
+                {
+                    'turn_in_state': turn_in_state,
+                    'game_id': game_id,
+                    'ongoing_game': self.ongoing_game,
+                },
+            )
+
+    async def _handle_player_info(self, state):
+        try:
+            players = state['Players']
+            p1, p2 = players
+        except (KeyError, ValueError):
+            pass
+        else:
+            p1info = p1.get('PlayerInfo')
+            p2info = p2.get('PlayerInfo')
+            if p1info and p2info:
+                if p1info['AccountId'] == self.account['Id']:
+                    console.log('You are player 1')
+                    self.ongoing_game.opponent = p2info
+                elif p2info['AccountId'] == self.account['Id']:
+                    console.log('You are player 2')
+                    self.ongoing_game.opponent = p1info
+                logger.debug('Player1: %s', p1)
+                logger.debug('Player2: %s', p2)
+
+    async def _handle_log(self, new_log_lines):
+        state = await self.parse_game_state()
         staged_turn = 0
         game_id = get_game_id(state)
         turn_in_state = state.get('Turn', 0)
@@ -268,7 +297,10 @@ class Tracker:
                     console.log('Matchmaking found us a game', game_id)
                     continue
                 case GameLogEvent.Type.TURN_END:
-                    self._update_current_turn(int(log_event.data['turn']), game_id)
+                    turn = int(log_event.data['turn'])
+                    console.log('Turn', turn, 'ended.')
+                    self._update_current_turn(turn + 1, game_id)
+                    await self._handle_game_state_change()
                     continue
                 case GameLogEvent.Type.GAME_END:
                     console.log('Game finished, waiting for state to update.')
@@ -303,9 +335,20 @@ class Tracker:
         cubes = grai.get('FinalCubeValue')
         cubestring = ':ice:' * cubes
         game_id = self.ongoing_game.id
-        self.ongoing_game = None
         if is_winner:
             console.log(f':trophy: You won {cubestring}!')
             return f'win-{game_id!s}.json'
         console.print(f':slightly_frowning_face: You lost {cubestring}')
         return f'loss-{game_id!s}.json'
+
+    async def _handle_locations(self, state):
+        return
+        turn = self.ongoing_game.current_turn
+        cards_at_locations = {'p1': [], 'p2': []}
+        for loc in state['Locations']:
+            if p1cards := loc.get('Player1Cards'):
+                cards_at_locations['p1'].append(p1cards)
+            if p2cards := loc.get('Player2Cards'):
+                cards_at_locations['p2'].append(p2cards)
+        console.log('Cards at locations on turn', turn, cards_at_locations)
+
