@@ -36,7 +36,7 @@ from snap_tracker.helpers import (
 
 APP_NAME = 'snap-tracker'
 AUTHOR = 'kimvais'
-FILESYSTEM_SYNC_INTERVAL = 2  # Seconds
+FILESYSTEM_SYNC_INTERVAL = 5  # Seconds
 GAME_DATA_DIRECTORY = r'%LOCALAPPDATA%low\Second Dinner\SNAP'
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,6 @@ class Tracker:
         self.cache_dir: Path = Path(platformdirs.user_cache_dir(APP_NAME, AUTHOR))
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.game_state = GameStateFile.from_path(self.state_dir / 'GameState.json')
-        self.play_state_path = self.state_dir / 'PlayState.json'
 
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(os.environ['MONGODB_URI'])
@@ -151,7 +150,7 @@ class Tracker:
             tg.create_task(self._watch())
 
     async def _watch(self):
-        paths = (self.player_log.path, self.error_log.path, self.game_state.path, self.play_state_path)
+        paths = (self.player_log.path, self.error_log.path, self.game_state.path)
         console.log('Watching for file changes in', paths)
         try:
             async for changes in awatch(*paths, force_polling=True):
@@ -213,9 +212,6 @@ class Tracker:
                 await self._handle_log(new_log_lines)
             case 'GameState':
                 await self._handle_game_state_change()
-            case 'PlayState':
-                play_state = await self._read_state('Play')
-                console.log(play_state)
             case _:
                 console.log('Unknown file change tracked:', changed_path)
 
@@ -274,12 +270,22 @@ class Tracker:
             p1info = p1.get('PlayerInfo')
             p2info = p2.get('PlayerInfo')
             if p1info and p2info:
-                if p1info['AccountId'] == self.account['Id']:
+                if p1info['AccountId'] == self.account['Id'] and self.ongoing_game.player_idx != 1:
+                    self.ongoing_game.player_idx = 1
                     console.log('You are player 1')
-                    self.ongoing_game.opponent = p2info
-                elif p2info['AccountId'] == self.account['Id']:
+                    opponent = p2
+                elif p2info['AccountId'] == self.account['Id'] and self.ongoing_game.player_idx != 2:
+                    self.ongoing_game.player_idx = 2
                     console.log('You are player 2')
-                    self.ongoing_game.opponent = p1info
+                    opponent = p1
+                if self.ongoing_game.opponent is None:
+                    self.ongoing_game.opponent = opponent
+                    opp_info = opponent['PlayerInfo']
+                    console.log(':crossed_swords: [red]',
+                                opp_info['Name'],
+                                '[reset]CL:', opp_info['CollectionScore'],
+                                'ATH rank:', opp_info['HighWatermarkRank']
+                                )
                 logger.debug('Player1: %s', p1)
                 logger.debug('Player2: %s', p2)
 

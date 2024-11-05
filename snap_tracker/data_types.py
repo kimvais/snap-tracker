@@ -49,6 +49,7 @@ class Game:
     id: uuid.UUID = None
     current_turn: int = 0
     mode: GameMode = GameMode.RANKED
+    player_idx: int | None = None
     opponent: dict | None = None
 
     @classmethod
