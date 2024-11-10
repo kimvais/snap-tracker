@@ -181,7 +181,7 @@ class Tracker:
 
     def _find_splits(self, credits_):
         try:
-            return rich_table(self.collection._maximize_splits(credits_), title='to maximize splits')
+            return rich_table(self.collection._maximize_splits(credits_)[:20], title='to maximize splits')
         except ValueError:
             return '[red]No cards to upgrade for splits.'
 

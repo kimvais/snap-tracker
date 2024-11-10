@@ -33,11 +33,11 @@ class Collection(dict):
             name = card_dict['CardDefId']
             variant_id = card_dict.get('ArtVariantDefId', 'Default')
             rarity = Rarity(card_dict['RarityDefId'])
-            if finish_def := card_dict.get('SurfaceFlare.EffectDefId'):
+            if finish_def := card_dict.get('SurfaceEffectDefId'):
                 finish = Finish(stringcase.snakecase(finish_def).split('_', 1)[0])
             else:
                 finish = None
-            flare = Flare.from_def(card_dict.get('CardRevealFlare.EffectDefId'))
+            flare = Flare.from_def(card_dict.get('CardRevealEffectDefId'))
 
             variant = CardVariant(
                 variant_id,
@@ -85,7 +85,15 @@ class Collection(dict):
 
     def _maximize_splits(self, credits_):
         def _sort_fn(c):
-            return c.splits, c.different_variants, c.boosters
+            # 2 "points" for splits > 4, 1 for splits > 3, -1 point for having gold, -1 point for having ink
+            if c.splits > 4:
+                points = 2
+            elif c.splits == 4:
+                points = 1
+            else:
+                points = 0
+            points -= c.has_gold - c.has_ink
+            return points, c.splits, c.different_variants, c.boosters
 
         upgrades = []
         # Find the highest possible purchase
@@ -103,14 +111,10 @@ class Collection(dict):
             upgrade_candidates = [c for c in _upgrade_candidates if c.boosters >= price.boosters]
             logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
             for card in sorted(upgrade_candidates, key=_sort_fn, reverse=True):
-                while price.credits <= credits_ and price.boosters <= card.boosters:
-                    upgrades.append({
-                        'card': card,
-                        'upgrade': price,
-                        'c': credits_,
-                        'B': card.boosters,
-                    })
-                    credits_ -= price.credits
-                    card.boosters -= price.boosters
-                    # TODO: Update variant to new quality
+                upgrades.append({
+                    'card': card,
+                    'upgrade': price,
+                    'c': credits_,
+                    'B': card.boosters,
+                })
         return upgrades

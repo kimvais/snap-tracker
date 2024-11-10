@@ -135,6 +135,8 @@ class Flare:
     class Color(enum.Enum):
         WHITE = 'white'
         BLACK = 'black'
+        BLUE = 'blue'
+        GOLD = 'gold'
         RED = 'red'
         PURPLE = 'purple'
         GREEN = 'green'
@@ -148,7 +150,7 @@ class Flare:
         if flare_def_id is None:
             return None
         flare_name, *_rem = stringcase.snakecase(flare_def_id).split('_', 1)
-        color = cls.Color(next(_rem)) if _rem else None
+        color = cls.Color(_rem[0]) if _rem else None
         return cls(cls.Effect(flare_name), color)
 
 
@@ -179,12 +181,21 @@ class Card:
         return stringcase.titlecase(self.def_id)
 
     def __rich__(self):
-        return f'{self.name} <{self.splits}/{self.different_variants}> ({self.score})'
+        gold = ':yellow_circle:' if self.has_gold else ''
+        ink = ':black_heart:' if self.has_ink else ''
+        return f'{self.name} <{self.splits}{gold}{ink}/{self.different_variants}> ({self.score})'
 
     @cached_property
     def number_of_common_variants(self):
         return sum(1 for v in self.variants if v.rarity == Rarity.COMMON)
 
+    @cached_property
+    def has_ink(self):
+        return any(v.finish == Finish.INK for v in self.variants)
+
+    @cached_property
+    def has_gold(self):
+        return any(v.finish == Finish.GOLD for v in self.variants)
 
 @dataclass
 class SplitRate:
