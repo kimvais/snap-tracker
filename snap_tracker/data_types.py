@@ -110,6 +110,9 @@ class Price:
         quotient, remainder = divmod(self.credits, 50)
         return int(quotient + remainder / 25)
 
+    def __lt__(self, other):
+        return self._priority > other._priority
+
 
 PRICES = sorted(_calculate_prices(), key=lambda price: (price._priority, price.credits))
 
