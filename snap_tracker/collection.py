@@ -78,7 +78,7 @@ class Collection(dict):
                 'x': n,
                 'card': card.name,
                 'credits_': f'{credits_} (-{credit_cost})',
-                'boosters': f'{card.boosters} (-{upgrades * 5})',
+                'boosters': f'{card.boosters}',
             })
             collection_level += n
         return upgrades
@@ -94,7 +94,7 @@ class Collection(dict):
             else:
                 points = 0
             points -= (c.has_gold + c.has_ink)
-            return p, points, c.splits, c.different_variants, c.boosters
+            return -p._priority, points, c.splits, c.boosters, c.different_variants, p
 
         upgrades = []
         # Find the highest possible purchase
@@ -109,15 +109,16 @@ class Collection(dict):
                 ),
             )
             logger.debug("You have %d %s cards", len(_upgrade_candidates), price.rarity)
-            upgrade_candidates = [c for c in _upgrade_candidates if c.boosters >= price.boosters]
-            logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
-            for card in upgrade_candidates:
-                upgrades.append((card, price))
+            upgrades.extend(((c, price) for c in _upgrade_candidates if c.boosters >= price.boosters))
+            # logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
 
+        cards = set()
         for c, p in sorted(upgrades, key=_sort_fn, reverse=True):
-            yield {
-                    'card': c,
-                    'upgrade': p,
-                    'c': p.credits,
-                    'B': c.boosters,
-                }
+            if c.def_id not in cards:
+                cards.add(c.def_id)
+                yield {
+                        'card': c,
+                        'upgrade': p,
+                        'c': p.credits,
+                        'B': c.boosters,
+                    }

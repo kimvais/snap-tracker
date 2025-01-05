@@ -24,6 +24,7 @@ from snap_tracker._game_log import (
 from snap_tracker.collection import Collection
 from snap_tracker.data_types import (
     Game,
+    Rarity,
 )
 from snap_tracker.debug import _replace_dollars_with_underscores_in_keys
 from snap_tracker.helpers import (
@@ -179,9 +180,14 @@ class Tracker:
         coll_state = await self._read_state('Collection')
         self.collection = Collection(self.account, coll_state['ServerState'])
 
-    def _find_splits(self, credits_):
+    def _find_splits(self, credits_, max_rows=20):
+        table = []
+        for n, row in enumerate(self.collection._maximize_splits(credits_), 1):
+            if n > max_rows and row['upgrade'].target != Rarity.INFINITY:
+                break
+            table.append(row)
         try:
-            return rich_table(list(self.collection._maximize_splits(credits_))[:20], title='to maximize splits')
+            return rich_table(table, title='to maximize splits')
         except ValueError:
             return '[red]No cards to upgrade for splits.'
 
