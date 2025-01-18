@@ -12,6 +12,7 @@ from typing import Any
 import motor.motor_asyncio
 import platformdirs
 from aiopath import AsyncPath
+from rich.table import Table
 from watchfiles import awatch
 
 from snap_tracker._console import console
@@ -24,6 +25,7 @@ from snap_tracker._game_log import (
 from snap_tracker.collection import Collection
 from snap_tracker.data_types import (
     Game,
+    PRICE_TO_INFINITY,
     Rarity,
 )
 from snap_tracker.debug import _replace_dollars_with_underscores_in_keys
@@ -124,6 +126,11 @@ class Tracker:
 
     @ensure_collection
     async def upgrades(self):
+        """
+        Output the list of common cards that can be upgaded (1 CL for 25 credits and 5 boosters) followed
+        by a list of cards that have enough boosters for split, prioritizes cards with the highest chance of "good"
+        splits and cards that are closest to split.
+        """
         credits_ = self._profile['Wallet']['_creditsCurrency'].get('TotalAmount', 0)
         console.print(f'Hi {self.account["Name"]}!')
         console.print(f'You have {credits_} credits_ available for upgrades.')
@@ -364,3 +371,11 @@ class Tracker:
                 cards_at_locations['p2'].append(p2cards)
         console.log('Cards at locations on turn', turn, cards_at_locations)
 
+    def show_prices(self):
+        table = Table(title="Upgrade prices to infinity")
+        table.add_column("Rarity")
+        table.add_column("Credits")
+        table.add_column("Boosters")
+        for price in PRICE_TO_INFINITY.values():
+            table.add_row(str(price.rarity), str(price.credits), str(price.boosters))
+        console.print(table)

@@ -115,6 +115,7 @@ class Price:
 
 
 PRICES = sorted(_calculate_prices(), key=lambda price: (price._priority, price.credits))
+PRICE_TO_INFINITY = {price.rarity: price for price in PRICES if price.target == Rarity.INFINITY}
 
 
 class Finish(enum.Enum):

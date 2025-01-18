@@ -10,6 +10,7 @@ from snap_tracker.data_types import (
     CardVariant,
     Finish,
     Flare,
+    PRICE_TO_INFINITY,
     Rarity,
 )
 
@@ -108,8 +109,9 @@ class Collection(dict):
                     self.values(),
                 ),
             )
+            price_to_inf = PRICE_TO_INFINITY[price.rarity]
             logger.debug("You have %d %s cards", len(_upgrade_candidates), price.rarity)
-            upgrades.extend(((c, price) for c in _upgrade_candidates if c.boosters >= price.boosters))
+            upgrades.extend(((c, price) for c in _upgrade_candidates if c.boosters >= price_to_inf.boosters))
             # logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
 
         cards = set()
