@@ -1,6 +1,6 @@
 [project]
 name = "snap-tracker"
-version = "0.1.3"
+version = "0.1.4"
 authors = [
     {name="Kimmo Parviainen-Jalanko", email="kimvais@kimva.is"},
 ]

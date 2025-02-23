@@ -120,9 +120,12 @@ PRICE_TO_INFINITY = {price.rarity: price for price in PRICES if price.target == 
 
 class Finish(enum.Enum):
     FOIL = 'foil'
-    PRISM = 'prism'
-    INK = 'ink'
     GOLD = 'gold'
+    INK = 'ink'
+    METALLIC = 'metallic'
+    PRISM = 'prism'
+    PSYCHEDELIC = 'psychedelic'
+    RAYS = 'rays'
 
 
 @dataclass(frozen=True)
@@ -133,6 +136,7 @@ class Flare:
 
         GLIMMER = 'glimmer'
         TONE = 'comic'
+        SNOW = 'snow'
         STARDUST = 'sparkle'
         KRACKLE = 'kirby'
 
