@@ -119,13 +119,17 @@ PRICE_TO_INFINITY = {price.rarity: price for price in PRICES if price.target == 
 
 
 class Finish(enum.Enum):
+    BANANAS = 'bananas'
+    COSMIC = 'space'
     FOIL = 'foil'
+    FROSTED_FLASS = 'frosted'
     GOLD = 'gold'
     INK = 'ink'
     METALLIC = 'metallic'
     PRISM = 'prism'
     PSYCHEDELIC = 'psychedelic'
     RAYS = 'rays'
+    REFRACTION = 'refraction'
 
 
 @dataclass(frozen=True)
@@ -133,7 +137,9 @@ class Flare:
     class Effect(enum.Enum):
         # Names are in-game English names.
         # Values are CardRevealEffectDefId's
-
+        BUBBLES = 'bubbles'
+        CONFETTI = 'confetti'
+        COSMIC = 'space'
         GLIMMER = 'glimmer'
         TONE = 'comic'
         SNOW = 'snow'
