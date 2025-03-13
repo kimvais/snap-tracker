@@ -137,6 +137,7 @@ class Flare:
     class Effect(enum.Enum):
         # Names are in-game English names.
         # Values are CardRevealEffectDefId's
+        BANANAS = 'bananas'
         BUBBLES = 'bubbles'
         CONFETTI = 'confetti'
         COSMIC = 'space'
@@ -210,6 +211,7 @@ class Card:
     @cached_property
     def has_gold(self):
         return any(v.finish == Finish.GOLD for v in self.variants)
+
 
 @dataclass
 class SplitRate:

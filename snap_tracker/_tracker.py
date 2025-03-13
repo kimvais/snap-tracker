@@ -131,13 +131,13 @@ class Tracker:
         by a list of cards that have enough boosters for split, prioritizes cards with the highest chance of "good"
         splits and cards that are closest to split.
         """
-        credits_ = self._profile['Wallet']['_creditsCurrency'].get('TotalAmount', 0)
+        credits_ = self._profile['Wallet']['_currencies']['Credits']['Credits'].get('TotalAmount', 0)
         console.print(f'Hi {self.account["Name"]}!')
         console.print(f'You have {credits_} credits_ available for upgrades.')
         console.rule()
 
-        console.print(self._find_commons(credits_))
         console.print(self._find_splits(credits_))
+        console.print(self._find_commons(credits_))
 
     # Internals
 
