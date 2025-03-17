@@ -142,10 +142,11 @@ class Flare:
         CONFETTI = 'confetti'
         COSMIC = 'space'
         GLIMMER = 'glimmer'
-        TONE = 'comic'
+        KRACKLE = 'kirby'
+        NEON = 'neon'
         SNOW = 'snow'
         STARDUST = 'sparkle'
-        KRACKLE = 'kirby'
+        TONE = 'comic'
 
     class Color(enum.Enum):
         WHITE = 'white'
@@ -156,6 +157,7 @@ class Flare:
         PURPLE = 'purple'
         GREEN = 'green'
         RAINBOW = 'rainbow'
+        TRAILS = 'trails'
 
     effect: Effect
     color: Color = None
