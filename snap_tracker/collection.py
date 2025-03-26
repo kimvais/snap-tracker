@@ -111,8 +111,11 @@ class Collection(dict):
             )
             price_to_inf = PRICE_TO_INFINITY[price.rarity]
             logger.debug("You have %d %s cards", len(_upgrade_candidates), price.rarity)
-            upgrades.extend(((c, price) for c in _upgrade_candidates if c.boosters >= price_to_inf.boosters))
-            # logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
+            if credits_ > 1550:
+                upgrades.extend(((c, price) for c in _upgrade_candidates if c.boosters >= credits_ / 10))
+            else:
+                upgrades.extend(((c, price) for c in _upgrade_candidates if c.boosters >= price_to_inf.boosters))
+        # logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
 
         cards = set()
         for c, p in sorted(upgrades, key=_sort_fn, reverse=True):
