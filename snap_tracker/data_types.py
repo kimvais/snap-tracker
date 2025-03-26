@@ -120,6 +120,7 @@ PRICE_TO_INFINITY = {price.rarity: price for price in PRICES if price.target == 
 
 class Finish(enum.Enum):
     BANANAS = 'bananas'
+    CIRCUITS = 'circuits'
     COSMIC = 'space'
     FOIL = 'foil'
     FROSTED_FLASS = 'frosted'
