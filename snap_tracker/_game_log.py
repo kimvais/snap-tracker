@@ -12,30 +12,47 @@ from typing import (
 import aiopath
 
 CARD_STAGING_RE = re.compile(
-    r'StageCard'
+    r'^StageCard'
     r'\|CardDefId=(?P<card_def_id>\w+)'
     r'\|CardEntityId=(?P<card_eid>\d+)'
     r'\|ZoneEntityId=(?P<zone_eid>\d+)'
     r'\|Turn=(?P<turn>\d)',
 )
 MATCH_FOUND_RE = re.compile(
-    r'OnMatchmakingMatchFound'
-    r'\|GameId=(?P<game_id>[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}.[0-9a-f]{12})',
+    r'^OnMatchmakingMatchFound'
+    r'\|GameId=(?P<game_id>[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})'
+    r'\|?.*',
     )
+# OnMatchmakingMatchFound|GameId=6c096454-645b-4ad1-9c15-be2ea74ea5a8|GameHostUrl=wss://eu-west-1-ws-cf.nvprod.snapgamete
+# ch.com/v38.13-3-game
 GAME_RESULTS_ACKED = re.compile(
     r'RemoteGame'
     r'\|SendRequestObject'
     r'\|RequestType=CubeGame.AckGameResultRequest',
 )
 GAME_INITIALIZING_RE = re.compile(
-    r'GameManager'
+    r'^GameManager'
     r'\|Initialize'
     r'\|gameMode=Remote'
     r'\|leagueDefId=(?P<game_mode>\w+)'
     r'\|sceneToLoadAfterGame=Play',
 )
 TURN_END_RE = re.compile(r'EndTurn\|Turn=(?P<turn>[1-7])')
-
+CARD_DRAW_RE = re.compile(
+    r'^CreateCustomActionAsync'
+    r'\|LoadVfxDef'
+    r'\|End'
+    r'\|CardVfxDefs/(?P<card_def_id>[^.]+)\.asset'
+    r'\|DrawCard'
+)
+CARD_RESOLVED_TRIGGER = re.compile(
+    r'^CreateCustomActionAsync'
+    r'\|LoadVfxDef'
+    r'\|End'
+    r'\|CardVfxDefs/'
+    r'(?P<card_def_id>[^.]+)\.asset'
+    r'\|\w*CardResolvedTrigger'
+)
 logger = logging.getLogger(__name__)
 
 
@@ -43,6 +60,8 @@ logger = logging.getLogger(__name__)
 class GameLogEvent:
     class Type(enum.Enum):
         CARD_STAGED = enum.auto()
+        CARD_RESOLVED = enum.auto()
+        CARD_DRAW = enum.auto()
         GAME_INITIALIZING = enum.auto()
         GAME_START = enum.auto()
         GAME_END = enum.auto()
@@ -91,10 +110,14 @@ def _parse_line(line: str) -> GameLogEvent:
         return GameLogEvent(GameLogEvent.Type.GAME_END)
     if m := MATCH_FOUND_RE.match(line):
         return GameLogEvent(GameLogEvent.Type.GAME_START, m.groupdict())
+    if m := CARD_RESOLVED_TRIGGER.match(line):
+        return GameLogEvent(GameLogEvent.Type.CARD_RESOLVED, m.groupdict())
     if m := CARD_STAGING_RE.match(line):
         return GameLogEvent(GameLogEvent.Type.CARD_STAGED, m.groupdict())
     if m := TURN_END_RE.match(line):
         return GameLogEvent(GameLogEvent.Type.TURN_END, m.groupdict())
     if m := GAME_INITIALIZING_RE.match(line):
         return GameLogEvent(GameLogEvent.Type.GAME_INITIALIZING, m.groupdict())
+    if m := CARD_DRAW_RE.match(line):
+        return GameLogEvent(GameLogEvent.Type.CARD_DRAW, m.groupdict())
     raise LookupError

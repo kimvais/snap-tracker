@@ -24,8 +24,8 @@ from snap_tracker._game_log import (
 )
 from snap_tracker.collection import Collection
 from snap_tracker.data_types import (
-    Game,
     PRICE_TO_INFINITY,
+    Game,
     Rarity,
 )
 from snap_tracker.debug import _replace_dollars_with_underscores_in_keys
@@ -230,6 +230,8 @@ class Tracker:
 
     async def _handle_game_state_change(self):
         state = await self.parse_game_state()
+        for path, def_id in self.find_card_def_ids(state):
+            logger.debug(f"{'.'.join(path)}: {def_id}")
         cgi = state.get('ClientGameInfo')
         if cgi is not None:
             console.log('ClientGameInfo:', cgi)
@@ -297,7 +299,7 @@ class Tracker:
                     console.log(':crossed_swords: [red]',
                                 opp_info['Name'],
                                 '[reset]CL:', opp_info['CollectionScore'],
-                                'ATH rank:', opp_info['HighWatermarkRank']
+                                'ATH rank:', opp_info['HighWatermarkRank'],
                                 )
                 logger.debug('Player1: %s', p1)
                 logger.debug('Player2: %s', p2)
@@ -310,6 +312,8 @@ class Tracker:
         for log_event in _parse_log_lines(new_log_lines):
             logger.debug(log_event)
             match log_event.type:
+                case GameLogEvent.Type.GAME_INITIALIZING:
+                    console.log(f'Matchmaking for {log_event.data["game_mode"]}')
                 case GameLogEvent.Type.GAME_START:
                     game_id = uuid.UUID(hex=log_event.data['game_id'])
                     self.ongoing_game = Game(game_id)
@@ -326,8 +330,13 @@ class Tracker:
                     break
                 case GameLogEvent.Type.CARD_STAGED:
                     staged_turn = max((int(log_event.data['turn']), staged_turn))
+                    console.log('Card', log_event.data['card_def_id'],  'staged')
                     if turn_in_state < staged_turn:
                         self._update_current_turn(staged_turn, game_id)
+                case GameLogEvent.Type.CARD_RESOLVED:
+                    console.log('Card', log_event.data['card_def_id'],  'resolved')
+                case GameLogEvent.Type.CARD_DRAW:
+                    console.log('Card', log_event.data['card_def_id'], 'drawn')
 
     async def _save_state_snapshot(self, state, file_name: str | None = None):
         ts = datetime.datetime.now(tz=datetime.UTC)
@@ -379,3 +388,31 @@ class Tracker:
         for price in PRICE_TO_INFINITY.values():
             table.add_row(str(price.rarity), str(price.credits), str(price.boosters))
         console.print(table)
+
+    def find_card_def_ids(self, state):
+        """
+        Finds all 'CardDefId' occurrences in the given state dictionary and returns their
+        hierarchies and values.
+
+        Args:
+            state (dict): The dictionary to search.
+
+        Returns:
+            list: A list of tuples, where each tuple contains the key hierarchy and the
+                  corresponding value, or an empty list if 'CardDefId' is not found.
+        """
+        target_key = "CardDefId"
+        results = []
+
+        def _recursive_search(data, hierarchy):
+            if isinstance(data, dict):
+                if target_key in data:
+                    results.append((tuple(hierarchy + [target_key]), data[target_key]))
+                for key, value in data.items():
+                    _recursive_search(value, hierarchy + [key])
+            elif isinstance(data, list):
+                for item in data:
+                    _recursive_search(item, hierarchy)
+
+        _recursive_search(state, [])
+        return results
