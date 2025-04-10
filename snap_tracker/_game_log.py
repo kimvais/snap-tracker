@@ -51,7 +51,7 @@ CARD_RESOLVED_TRIGGER = re.compile(
     r'\|End'
     r'\|CardVfxDefs/'
     r'(?P<card_def_id>[^.]+)\.asset'
-    r'\|\w*CardResolvedTrigger'
+    r'\|ResolveCardPlayed'
 )
 logger = logging.getLogger(__name__)
 

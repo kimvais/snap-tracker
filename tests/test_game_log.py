@@ -30,7 +30,7 @@ class GameLogTest(unittest.TestCase):
     def test_card_staging(self):
         line = r'StageCard|CardDefId=Deadpool|CardEntityId=62|ZoneEntityId=11|Turn=6'
         event = _parse_line(line)
-        assert event.type == GameLogEvent.Type.CARD_STAGED
+        assert event.type == GameLogEvent.Type.CARD_PLAYED
         assert event.data['card_def_id'] == 'Deadpool'
         assert int(event.data['zone_eid']) == 11
         assert int(event.data['turn']) == 6

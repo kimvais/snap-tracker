@@ -330,11 +330,11 @@ class Tracker:
                     break
                 case GameLogEvent.Type.CARD_STAGED:
                     staged_turn = max((int(log_event.data['turn']), staged_turn))
-                    console.log('Card', log_event.data['card_def_id'],  'staged')
+                    console.log('PLAYER: Card', log_event.data['card_def_id'],  'staged')
                     if turn_in_state < staged_turn:
                         self._update_current_turn(staged_turn, game_id)
                 case GameLogEvent.Type.CARD_RESOLVED:
-                    console.log('Card', log_event.data['card_def_id'],  'resolved')
+                    console.log('OPPONENT: Card', log_event.data['card_def_id'],  'resolved')
                 case GameLogEvent.Type.CARD_DRAW:
                     console.log('Card', log_event.data['card_def_id'], 'drawn')
 
