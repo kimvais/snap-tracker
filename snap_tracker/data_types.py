@@ -131,6 +131,7 @@ class Finish(enum.Enum):
     PSYCHEDELIC = 'psychedelic'
     RAYS = 'rays'
     REFRACTION = 'refraction'
+    WATER = 'water'
 
 
 @dataclass(frozen=True)
