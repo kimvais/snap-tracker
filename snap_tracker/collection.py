@@ -85,8 +85,9 @@ class Collection(dict):
         return upgrades
 
     def _maximize_splits(self, credits_):
-        def _sort_fn(t):
+        def _by_points(t):
             # 2 "points" for splits > 4, 1 for splits > 3, -1 point for having gold, -1 point for having ink
+            # XXX: Unused.
             c, p = t
             if c.splits > 4:
                 points = 2
@@ -96,6 +97,12 @@ class Collection(dict):
                 points = 0
             points -= (c.has_gold + c.has_ink)
             return -p._priority, points, c.splits, c.boosters, c.different_variants, p
+
+        def _by_boosters(t):
+            return t[0].boosters
+
+        def _by_price(t):
+            return t[1], t[0].boosters
 
         upgrades = []
         # Find the highest possible purchase
@@ -115,10 +122,11 @@ class Collection(dict):
                 upgrades.extend(((c, price) for c in _upgrade_candidates if c.boosters >= credits_ / 10))
             else:
                 upgrades.extend(((c, price) for c in _upgrade_candidates if c.boosters >= price_to_inf.boosters))
-        # logger.debug("You enough boosters to upgrade %d of those cards", len(upgrade_candidates))
 
+        if any(p.target == Rarity.INFINITY for c, p in upgrades):
+            upgrades = ((c, p) for c, p in upgrades if p.target == Rarity.INFINITY)
         cards = set()
-        for c, p in sorted(upgrades, key=_sort_fn, reverse=True):
+        for c, p in sorted(upgrades, key=_by_boosters, reverse=True):
             if c.def_id not in cards:
                 cards.add(c.def_id)
                 yield {
